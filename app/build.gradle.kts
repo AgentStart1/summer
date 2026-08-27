@@ -9,21 +9,53 @@ plugins {
 android {
     namespace = "com.example.summerapp"
     compileSdk = 36
+
+    signingConfigs {
+        val signPath = System.getenv("storyteller_f_sign_path")
+        val signKey = System.getenv("storyteller_f_sign_key")
+        val signAlias = System.getenv("storyteller_f_sign_alias")
+        val signStorePassword = System.getenv("storyteller_f_sign_store_password")
+        val signKeyPassword = System.getenv("storyteller_f_sign_key_password")
+        val signStorePath = when {
+            signPath != null -> File(signPath)
+            signKey != null -> File(System.getProperty("user.home"), "signing_key.jks")
+            else -> null
+        }
+
+        if (signStorePath != null &&
+            signAlias != null &&
+            signStorePassword != null &&
+            signKeyPassword != null
+        ) {
+            create("release") {
+                keyAlias = signAlias
+                keyPassword = signKeyPassword
+                storeFile = signStorePath
+                storePassword = signStorePassword
+            }
+        }
+    }
+
     defaultConfig {
         applicationId = "com.example.summerapp"
         minSdk = 24
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
         release {
+            signingConfigs.findByName("release")?.let { signingConfig = it }
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
         create("daily") {
+            initWith(getByName("release"))
             applicationIdSuffix = ".daily"
+            versionNameSuffix = "-daily"
+            matchingFallbacks += listOf("release")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
@@ -75,6 +107,7 @@ dependencies {
   // Arch Components
   implementation(libs.androidx.lifecycle.runtime.compose)
   implementation(libs.androidx.lifecycle.viewmodel.compose)
+  implementation(libs.androidx.datastore.preferences)
 
   // Compose
   implementation(libs.androidx.compose.ui)
