@@ -1,10 +1,7 @@
 package com.example.summerapp
 
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.ui.NavDisplay
@@ -24,19 +21,19 @@ fun MainNavigation() {
                 FeedScreen(
                     onAddBalanceChange = { backStack.add(AddBalanceChange) },
                     onManageFundSources = { backStack.add(FundSources) },
-                    modifier = Modifier.safeDrawingPadding().padding(16.dp),
+                    modifier = Modifier,
                 )
             }
             entry<FundSources> {
                 FundSourcesScreen(
                     onBack = { backStack.removeLastOrNull() },
-                    modifier = Modifier.safeDrawingPadding().padding(16.dp),
+                    modifier = Modifier,
                 )
             }
             entry<AddBalanceChange> {
                 AddBalanceChangeScreen(
                     onBack = { backStack.removeLastOrNull() },
-                    modifier = Modifier.safeDrawingPadding().padding(16.dp),
+                    modifier = Modifier,
                 )
             }
         },
