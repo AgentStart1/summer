@@ -5,47 +5,43 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.summerapp.data.DataRepository
 import com.example.summerapp.data.db.entity.FundSource
-import kotlinx.coroutines.flow.SharingStarted
+import com.example.summerapp.data.llmd.LlmdTarget
+import com.example.summerapp.data.llmd.LlmdTargetSettings
+import com.example.summerapp.ui.host.AppDispatchers
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.launch
 
-class FundSourcesViewModel(private val repository: DataRepository) : ViewModel() {
-    val uiState: StateFlow<FundSourcesUiState> = repository.getAllFundSources()
-        .map { FundSourcesUiState.Success(it) as FundSourcesUiState }
-        .catch { emit(FundSourcesUiState.Error(it.message ?: "Unknown error")) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), FundSourcesUiState.Loading)
+class FundSourcesViewModel(
+    repository: DataRepository,
+    settings: LlmdTargetSettings,
+    dispatchers: AppDispatchers = AppDispatchers.Runtime,
+) : ViewModel() {
+    private val host = FundSourcesHost(repository, settings, viewModelScope, dispatchers)
+    val uiState: StateFlow<FundSourcesUiState> = host.uiState
 
     fun addFundSource(name: String) {
-        viewModelScope.launch {
-            repository.insertFundSource(FundSource(name = name))
-        }
+        host.addFundSource(name)
     }
 
     fun updateFundSource(fundSource: FundSource) {
-        viewModelScope.launch {
-            repository.updateFundSource(fundSource.copy(updatedAt = System.currentTimeMillis()))
-        }
+        host.updateFundSource(fundSource)
     }
 
     fun deleteFundSource(fundSource: FundSource) {
-        viewModelScope.launch {
-            repository.deleteFundSource(fundSource)
-        }
+        host.deleteFundSource(fundSource)
     }
 
-    class Factory(private val repository: DataRepository) : ViewModelProvider.Factory {
+    fun selectLlmdTarget(target: LlmdTarget) {
+        host.selectLlmdTarget(target)
+    }
+
+    class Factory(
+        private val repository: DataRepository,
+        private val settings: LlmdTargetSettings,
+        private val dispatchers: AppDispatchers = AppDispatchers.Runtime,
+    ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            return FundSourcesViewModel(repository) as T
+            return FundSourcesViewModel(repository, settings, dispatchers) as T
         }
     }
-}
-
-sealed interface FundSourcesUiState {
-    data object Loading : FundSourcesUiState
-    data class Error(val message: String) : FundSourcesUiState
-    data class Success(val fundSources: List<FundSource>) : FundSourcesUiState
 }
