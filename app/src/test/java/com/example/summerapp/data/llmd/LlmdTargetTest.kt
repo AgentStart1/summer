@@ -5,14 +5,14 @@ import org.junit.Test
 
 class LlmdTargetTest {
     @Test
-    fun preferenceValues_resolveEveryBuildType() {
+    fun currentPreferencesRoundTrip() {
         LlmdTarget.entries.forEach { target ->
             assertEquals(target, LlmdTarget.fromPreference(target.preferenceValue))
         }
     }
 
     @Test
-    fun missingOrUnknownPreference_defaultsToRelease() {
+    fun missingAndUnknownPreferencesFallBackToRelease() {
         assertEquals(LlmdTarget.Release, LlmdTarget.fromPreference(null))
         assertEquals(LlmdTarget.Release, LlmdTarget.fromPreference("unknown"))
     }

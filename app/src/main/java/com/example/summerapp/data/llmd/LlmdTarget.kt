@@ -10,10 +10,10 @@ enum class LlmdTarget(
         displayName = "Release",
         packageName = "com.storytellerf.llmd",
     ),
-    Daily(
-        preferenceValue = "daily",
-        displayName = "Daily",
-        packageName = "com.storytellerf.llmd.daily",
+    Alpha(
+        preferenceValue = "alpha",
+        displayName = "Alpha",
+        packageName = "com.storytellerf.llmd.alpha",
     ),
     Debug(
         preferenceValue = "debug",

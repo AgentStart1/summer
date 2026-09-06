@@ -57,15 +57,15 @@ class FundSourcesHostTest {
 
         host.addFundSource("Bank")
         host.updateFundSource(wallet.copy(name = "Cash"))
-        host.selectLlmdTarget(LlmdTarget.Daily)
+        host.selectLlmdTarget(LlmdTarget.Alpha)
         advanceUntilIdle()
         environment.close()
 
         assertEquals("Bank", repository.insertedFundSources.single().name)
         assertEquals(2_000L, repository.updatedFundSources.single().updatedAt)
-        assertEquals(LlmdTarget.Daily, settings.selectedTargetValue)
+        assertEquals(LlmdTarget.Alpha, settings.selectedTargetValue)
         val updatedState = host.uiState.value as FundSourcesUiState.Success
-        assertEquals(LlmdTarget.Daily, updatedState.selectedLlmdTarget)
+        assertEquals(LlmdTarget.Alpha, updatedState.selectedLlmdTarget)
     }
 }
 

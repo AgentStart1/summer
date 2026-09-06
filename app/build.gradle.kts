@@ -51,10 +51,10 @@ android {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
-        create("daily") {
+        create("alpha") {
             initWith(getByName("release"))
-            applicationIdSuffix = ".daily"
-            versionNameSuffix = "-daily"
+            applicationIdSuffix = ".alpha"
+            versionNameSuffix = "-alpha"
             matchingFallbacks += listOf("release")
             isMinifyEnabled = true
             isShrinkResources = true

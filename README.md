@@ -10,7 +10,7 @@ amount that changed the next snapshot, such as a purchase or income.
 Open **Settings** from the home screen to choose the LLMD package used for recognition:
 
 - Release: `com.storytellerf.llmd`
-- Daily: `com.storytellerf.llmd.daily`
+- Alpha: `com.storytellerf.llmd.alpha`
 - Debug: `com.storytellerf.llmd.debug`
 
 The choice is saved on device. Debug builds default to LLMD Debug; non-debug builds default to

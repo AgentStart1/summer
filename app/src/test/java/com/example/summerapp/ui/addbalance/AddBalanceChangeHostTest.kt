@@ -41,7 +41,7 @@ class AddBalanceChangeHostTest {
             imageAnalyzer = analyzer,
             scope = environment.scope,
             dispatchers = environment.dispatchers,
-            imageAnalysisTarget = flowOf(LlmdTarget.Daily),
+            imageAnalysisTarget = flowOf(LlmdTarget.Alpha),
         )
         val effects = mutableListOf<AddBalanceChangeEffect>()
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
@@ -58,7 +58,7 @@ class AddBalanceChangeHostTest {
         advanceUntilIdle()
         assertEquals("380.00", host.uiState.value.balance)
         assertEquals("content://test/balance", analyzer.lastImageReference)
-        assertEquals(LlmdTarget.Daily, analyzer.lastTarget)
+        assertEquals(LlmdTarget.Alpha, analyzer.lastTarget)
 
         host.selectFundSource(fundSource)
         host.updateNote("Groceries")
