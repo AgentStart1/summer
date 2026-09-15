@@ -7,7 +7,7 @@ plugins {
 }
 
 android {
-    namespace = "com.storytellerf.summet"
+    namespace = "com.storytellerf.summer"
     compileSdk = 36
 
     signingConfigs {
@@ -37,7 +37,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.storytellerf.summet"
+        applicationId = "com.storytellerf.summer"
         minSdk = 24
         targetSdk = 36
         versionCode = 1
