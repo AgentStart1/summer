@@ -15,6 +15,7 @@ import java.io.FileOutputStream
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -57,8 +58,10 @@ class LlmdImageAnalyzer(
             Result.failure(error)
         } finally {
             preparedImage?.let { image ->
-                appContext.revokeUriPermission(image.uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                withContext(ioDispatcher) { image.file.delete() }
+                withContext(NonCancellable + ioDispatcher) {
+                    appContext.revokeUriPermission(image.uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    image.file.delete()
+                }
             }
         }
     }
