@@ -3,4 +3,4 @@
 # in the Android SDK tools proguard configuration.
 
 # Keep Room entities
--keep class com.example.summerapp.data.db.entity.** { *; }
+-keep class com.storytellerf.summer.data.db.entity.** { *; }
