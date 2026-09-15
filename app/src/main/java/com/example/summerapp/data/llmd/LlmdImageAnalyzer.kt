@@ -1,20 +1,24 @@
 package com.example.summerapp.data.llmd
 
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.net.Uri
-import android.util.Base64
 import androidx.core.net.toUri
+import androidx.core.content.FileProvider
+import java.io.File
 import java.io.ByteArrayOutputStream
+import java.io.FileOutputStream
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import org.json.JSONTokener
 
 interface BalanceImageAnalyzer : AutoCloseable {
     suspend fun extractBalanceFromImage(
@@ -36,15 +40,26 @@ class LlmdImageAnalyzer(
         imageReference: String,
         target: LlmdTarget,
     ): Result<Double> {
+        var preparedImage: PreparedImage? = null
         return try {
-            val encodedImage = withContext(ioDispatcher) { encodeImage(imageReference.toUri()) }
-            val requestJson = buildBalanceExtractionRequest(encodedImage)
+            preparedImage = withContext(ioDispatcher) { prepareImage(imageReference.toUri()) }
+            appContext.grantUriPermission(
+                target.packageName,
+                preparedImage.uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION,
+            )
+            val requestJson = buildBalanceExtractionRequest(preparedImage.uri.toString())
             val responseJson = serviceConnection.chatCompletion(target, requestJson)
             parseBalanceFromResponse(responseJson)
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
             Result.failure(error)
+        } finally {
+            preparedImage?.let { image ->
+                appContext.revokeUriPermission(image.uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                withContext(ioDispatcher) { image.file.delete() }
+            }
         }
     }
 
@@ -52,7 +67,7 @@ class LlmdImageAnalyzer(
         serviceConnection.close()
     }
 
-    private fun encodeImage(uri: Uri): EncodedImage {
+    private fun prepareImage(uri: Uri): PreparedImage {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         val boundsStream = appContext.contentResolver.openInputStream(uri)
             ?: throw IllegalArgumentException("Cannot open image URI")
@@ -90,9 +105,16 @@ class LlmdImageAnalyzer(
             require(bytes.size <= MAX_ENCODED_IMAGE_BYTES) {
                 "Image is too detailed to send safely. Please crop it and try again."
             }
-            EncodedImage(
-                mimeType = JPEG_MIME_TYPE,
-                base64Data = Base64.encodeToString(bytes, Base64.NO_WRAP),
+            val imageDirectory = File(appContext.cacheDir, "llmd-images").apply { mkdirs() }
+            val file = File.createTempFile("balance-", ".jpg", imageDirectory)
+            FileOutputStream(file).use { it.write(bytes) }
+            PreparedImage(
+                uri = FileProvider.getUriForFile(
+                    appContext,
+                    "${appContext.packageName}.llmd-images",
+                    file,
+                ),
+                file = file,
             )
         } finally {
             working.recycle()
@@ -138,12 +160,12 @@ class LlmdImageAnalyzer(
     }
 }
 
-internal data class EncodedImage(
-    val mimeType: String,
-    val base64Data: String,
+private data class PreparedImage(
+    val uri: Uri,
+    val file: File,
 )
 
-internal fun buildBalanceExtractionRequest(encodedImage: EncodedImage): String {
+internal fun buildBalanceExtractionRequest(imageUrl: String): String {
     val content = JSONArray().apply {
         put(JSONObject().apply {
             put("type", "text")
@@ -152,7 +174,7 @@ internal fun buildBalanceExtractionRequest(encodedImage: EncodedImage): String {
         put(JSONObject().apply {
             put("type", "image_url")
             put("image_url", JSONObject().apply {
-                put("url", buildImageDataUrl(encodedImage))
+                put("url", imageUrl)
             })
         })
     }
@@ -168,13 +190,23 @@ internal fun buildBalanceExtractionRequest(encodedImage: EncodedImage): String {
         put("model", MODEL_NAME)
         put("messages", messages)
         put("max_tokens", 100)
+        put("response_format", buildBalanceResponseFormat())
     }.toString()
 }
 
-internal fun buildImageDataUrl(encodedImage: EncodedImage): String =
-    "data:${encodedImage.mimeType};base64,${encodedImage.base64Data}"
+private fun buildBalanceResponseFormat(): JSONObject = JSONObject().apply {
+    put("type", "json_schema")
+    put("json_schema", JSONObject().apply {
+        put("name", "balance_extraction")
+        put("strict", true)
+        put("schema", JSONObject().apply {
+            put("type", "number")
+            put("description", "The balance amount shown in the screenshot")
+        })
+    })
+}
 
-private fun parseBalanceFromResponse(responseJson: String): Result<Double> {
+internal fun parseBalanceFromResponse(responseJson: String): Result<Double> {
     return try {
         val response = JSONObject(responseJson)
         val error = response.optJSONObject("error")
@@ -191,7 +223,9 @@ private fun parseBalanceFromResponse(responseJson: String): Result<Double> {
             val content = choices.getJSONObject(0)
                 .getJSONObject("message")
                 .getString("content")
-            Result.success(parseBalanceFromText(content))
+            val balance = JSONTokener(content).nextValue()
+            require(balance is Number) { "Structured balance response is not a number" }
+            Result.success(balance.toDouble())
         } else {
             Result.failure(Exception("No balance found in image"))
         }
@@ -200,23 +234,14 @@ private fun parseBalanceFromResponse(responseJson: String): Result<Double> {
     }
 }
 
-internal fun parseBalanceFromText(text: String): Double {
-    val normalized = text.replace('\u2212', '-')
-    val match = BALANCE_PATTERN.find(normalized)
-    return match?.value?.replace(",", "")?.toDoubleOrNull()
-        ?: throw IllegalArgumentException("Could not parse balance from response: $text")
-}
-
 private const val MODEL_NAME = "gemma-4-E2B-it"
-private val BALANCE_PATTERN = Regex("""[-+]?(?:(?:\d{1,3}(?:,\d{3})+)|\d+)(?:\.\d+)?""")
 
 const val BALANCE_EXTRACTION_PROMPT = """
 Extract the balance amount from this screenshot.
-Return ONLY the numeric value, including a leading minus sign when the balance is negative.
-Do not include currency symbols or other text.
-For example, if the balance is ¥1,234.56, return: 1234.56
-If the balance is -¥45.67, return: -45.67
-If you cannot find a balance, return: 0
+Return the numeric value, including a leading minus sign when the balance is negative.
+Do not include currency symbols in the value.
+For example, ¥1,234.56 is 1234.56 and -¥45.67 is -45.67.
+If you cannot find a balance, return 0.
 """
 
 class LlmdAuthorizationException :
