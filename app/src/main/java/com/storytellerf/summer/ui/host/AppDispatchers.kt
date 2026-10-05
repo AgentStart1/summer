@@ -7,11 +7,13 @@ import kotlinx.coroutines.Dispatchers
 data class AppDispatchers(
     val default: CoroutineDispatcher,
     val io: CoroutineDispatcher,
+    val coordination: CoroutineDispatcher = default,
 ) {
     companion object {
         val Runtime = AppDispatchers(
             default = Dispatchers.Default,
             io = Dispatchers.IO,
+            coordination = Dispatchers.Default.limitedParallelism(1),
         )
     }
 }

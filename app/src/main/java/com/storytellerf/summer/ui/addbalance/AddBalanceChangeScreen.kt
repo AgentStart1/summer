@@ -59,8 +59,8 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.storytellerf.summer.data.DefaultDataRepository
 import com.storytellerf.summer.data.db.SummerDatabase
-import com.storytellerf.summer.data.llmd.LlmdImageAnalyzer
 import com.storytellerf.summer.data.llmd.LlmdServiceConnection
+import com.storytellerf.summer.data.recognition.configuredImageAnalyzer
 import com.storytellerf.summer.data.llmd.DataStoreLlmdTargetSettings
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -71,10 +71,7 @@ fun AddBalanceChangeScreen(
     viewModel: AddBalanceChangeViewModel = viewModel(
         factory = AddBalanceChangeViewModel.Factory(
             DefaultDataRepository(SummerDatabase.getInstance(LocalContext.current.applicationContext)),
-            LlmdImageAnalyzer(
-                LocalContext.current.applicationContext,
-                LlmdServiceConnection(LocalContext.current.applicationContext),
-            ),
+            configuredImageAnalyzer(LocalContext.current.applicationContext),
             DataStoreLlmdTargetSettings(LocalContext.current.applicationContext).selectedTarget,
         )
     ),

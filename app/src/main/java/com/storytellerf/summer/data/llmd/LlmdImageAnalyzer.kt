@@ -1,16 +1,13 @@
 package com.storytellerf.summer.data.llmd
 
+import com.storytellerf.summer.data.recognition.BalanceImageAnalyzer
+import com.storytellerf.summer.data.recognition.BalanceImageEncoder
 import android.content.Context
 import android.content.Intent
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.graphics.Canvas
-import android.graphics.Color
 import android.net.Uri
 import androidx.core.net.toUri
 import androidx.core.content.FileProvider
 import java.io.File
-import java.io.ByteArrayOutputStream
 import java.io.FileOutputStream
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -20,15 +17,6 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import org.json.JSONTokener
-
-interface BalanceImageAnalyzer : AutoCloseable {
-    suspend fun extractBalanceFromImage(
-        imageReference: String,
-        target: LlmdTarget = LlmdTarget.Release,
-    ): Result<Double>
-
-    override fun close() = Unit
-}
 
 class LlmdImageAnalyzer(
     context: Context,
@@ -71,95 +59,18 @@ class LlmdImageAnalyzer(
     }
 
     private fun prepareImage(uri: Uri): PreparedImage {
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        val boundsStream = appContext.contentResolver.openInputStream(uri)
-            ?: throw IllegalArgumentException("Cannot open image URI")
-        boundsStream.use { BitmapFactory.decodeStream(it, null, bounds) }
-
-        require(bounds.outWidth > 0 && bounds.outHeight > 0) { "Selected file is not a valid image" }
-
-        val options = BitmapFactory.Options().apply {
-            inSampleSize = calculateInSampleSize(bounds.outWidth, bounds.outHeight)
-            inPreferredConfig = Bitmap.Config.ARGB_8888
-        }
-        val decoded = appContext.contentResolver.openInputStream(uri)?.use {
-            BitmapFactory.decodeStream(it, null, options)
-        } ?: throw IllegalArgumentException("Cannot decode selected image")
-
-        var working = decoded.scaledToFit(MAX_IMAGE_DIMENSION)
-        if (working !== decoded) decoded.recycle()
-        if (working.hasAlpha()) {
-            val flattened = Bitmap.createBitmap(working.width, working.height, Bitmap.Config.ARGB_8888)
-            Canvas(flattened).apply {
-                drawColor(Color.WHITE)
-                drawBitmap(working, 0f, 0f, null)
-            }
-            working.recycle()
-            working = flattened
-        }
-
-        return try {
-            var quality = INITIAL_JPEG_QUALITY
-            var bytes = working.compressAsJpeg(quality)
-            while (bytes.size > MAX_ENCODED_IMAGE_BYTES && quality > MIN_JPEG_QUALITY) {
-                quality -= JPEG_QUALITY_STEP
-                bytes = working.compressAsJpeg(quality)
-            }
-            require(bytes.size <= MAX_ENCODED_IMAGE_BYTES) {
-                "Image is too detailed to send safely. Please crop it and try again."
-            }
-            val imageDirectory = File(appContext.cacheDir, "llmd-images").apply { mkdirs() }
-            val file = File.createTempFile("balance-", ".jpg", imageDirectory)
-            FileOutputStream(file).use { it.write(bytes) }
-            PreparedImage(
-                uri = FileProvider.getUriForFile(
-                    appContext,
-                    "${appContext.packageName}.llmd-images",
-                    file,
-                ),
-                file = file,
-            )
-        } finally {
-            working.recycle()
-        }
-    }
-
-    private fun calculateInSampleSize(width: Int, height: Int): Int {
-        var sampleSize = 1
-        while (width / sampleSize > MAX_IMAGE_DIMENSION * 2 ||
-            height / sampleSize > MAX_IMAGE_DIMENSION * 2
-        ) {
-            sampleSize *= 2
-        }
-        return sampleSize
-    }
-
-    private fun Bitmap.scaledToFit(maxDimension: Int): Bitmap {
-        val largestDimension = maxOf(width, height)
-        if (largestDimension <= maxDimension) return this
-        val scale = maxDimension.toFloat() / largestDimension
-        return Bitmap.createScaledBitmap(
-            this,
-            (width * scale).toInt().coerceAtLeast(1),
-            (height * scale).toInt().coerceAtLeast(1),
-            true,
+        val bytes = BalanceImageEncoder(appContext).encode(uri)
+        val imageDirectory = File(appContext.cacheDir, "llmd-images").apply { mkdirs() }
+        val file = File.createTempFile("balance-", ".jpg", imageDirectory)
+        FileOutputStream(file).use { it.write(bytes) }
+        return PreparedImage(
+            uri = FileProvider.getUriForFile(
+                appContext,
+                "${appContext.packageName}.llmd-images",
+                file,
+            ),
+            file = file,
         )
-    }
-
-    private fun Bitmap.compressAsJpeg(quality: Int): ByteArray {
-        return ByteArrayOutputStream().use { output ->
-            check(compress(Bitmap.CompressFormat.JPEG, quality, output)) { "Failed to encode image" }
-            output.toByteArray()
-        }
-    }
-
-    companion object {
-        private const val MAX_IMAGE_DIMENSION = 1600
-        private const val MAX_ENCODED_IMAGE_BYTES = 500_000
-        private const val INITIAL_JPEG_QUALITY = 85
-        private const val MIN_JPEG_QUALITY = 45
-        private const val JPEG_QUALITY_STEP = 10
-        private const val JPEG_MIME_TYPE = "image/jpeg"
     }
 }
 

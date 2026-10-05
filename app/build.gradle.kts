@@ -99,6 +99,12 @@ dependencies {
   implementation(composeBom)
   androidTestImplementation(composeBom)
 
+  implementation(libs.koog.openai)
+  implementation(libs.koog.anthropic)
+  implementation(libs.koog.openrouter)
+  implementation(libs.koog.http.ktor)
+  implementation(libs.ktor.client.okhttp)
+
   // Core Android dependencies
   implementation(libs.androidx.core.ktx)
   implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -123,12 +129,14 @@ dependencies {
   // Local tests: jUnit, coroutines, Android runner
   testImplementation(libs.junit)
   testImplementation(libs.kotlinx.coroutines.test)
+  testImplementation(libs.ktor.client.mock)
 
   // Instrumented tests: jUnit rules and runners
   androidTestImplementation(libs.androidx.test.core)
   androidTestImplementation(libs.androidx.test.ext.junit)
   androidTestImplementation(libs.androidx.test.runner)
   androidTestImplementation(libs.androidx.test.espresso.core)
+  androidTestImplementation(libs.ktor.client.mock)
 
   // Navigation
   implementation(libs.androidx.navigation3.ui)

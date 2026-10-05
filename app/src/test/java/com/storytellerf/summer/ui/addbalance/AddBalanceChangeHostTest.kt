@@ -1,7 +1,7 @@
 package com.storytellerf.summer.ui.addbalance
 
 import com.storytellerf.summer.data.db.entity.FundSource
-import com.storytellerf.summer.data.llmd.BalanceImageAnalyzer
+import com.storytellerf.summer.data.recognition.BalanceImageAnalyzer
 import com.storytellerf.summer.data.llmd.LlmdAuthorizationException
 import com.storytellerf.summer.data.llmd.LlmdTarget
 import com.storytellerf.summer.testing.FakeDataRepository
@@ -10,6 +10,7 @@ import kotlin.coroutines.ContinuationInterceptor
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
@@ -23,6 +24,30 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class AddBalanceChangeHostTest {
+    @Test
+    fun saveImmediatelyAfterImport_doesNotSaveThePreviousBalance() = runTest {
+        val environment = createHostTestEnvironment()
+        val source = FundSource(id = 1, name = "Wallet")
+        val repository = FakeDataRepository(fundSources = listOf(source))
+        val analyzer = object : BalanceImageAnalyzer {
+            override suspend fun extractBalanceFromImage(imageReference: String, target: LlmdTarget): Result<Double> =
+                awaitCancellation()
+        }
+        val host = AddBalanceChangeHost(repository, analyzer, environment.scope, environment.dispatchers)
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { host.uiState.collect() }
+        host.selectFundSource(source)
+        host.updateBalance("10.00")
+        advanceUntilIdle()
+
+        host.extractBalanceFromImage("content://test/pending")
+        host.saveBalanceChange()
+        advanceUntilIdle()
+        assertTrue(host.uiState.value.isImageAnalyzing)
+        assertTrue(repository.insertedBalanceChanges.isEmpty())
+        host.close()
+        environment.close()
+    }
+
     @Test
     fun successfulAnalysisAndSave_useInjectedDispatchersAndPublishEffect() = runTest {
         val environment = createHostTestEnvironment()

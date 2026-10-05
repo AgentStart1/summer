@@ -3,7 +3,7 @@ package com.storytellerf.summer.ui.addbalance
 import com.storytellerf.summer.data.DataRepository
 import com.storytellerf.summer.data.db.entity.BalanceChange
 import com.storytellerf.summer.data.db.entity.FundSource
-import com.storytellerf.summer.data.llmd.BalanceImageAnalyzer
+import com.storytellerf.summer.data.recognition.BalanceImageAnalyzer
 import com.storytellerf.summer.data.llmd.LlmdAuthorizationException
 import com.storytellerf.summer.data.llmd.LlmdTarget
 import com.storytellerf.summer.ui.host.AppDispatchers
@@ -14,6 +14,10 @@ import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -38,6 +42,7 @@ class AddBalanceChangeHost(
     private val dispatchers: AppDispatchers,
     private val imageAnalysisTarget: Flow<LlmdTarget> = flowOf(LlmdTarget.Release),
 ) : AutoCloseable {
+    private val hostScope = CoroutineScope(scope.coroutineContext + SupervisorJob(scope.coroutineContext[Job]) + dispatchers.coordination)
     private val formState = MutableStateFlow(AddBalanceChangeUiState())
     private val pendingImageReference = MutableStateFlow<String?>(null)
     private val mutableEffects = MutableSharedFlow<AddBalanceChangeEffect>()
@@ -60,66 +65,70 @@ class AddBalanceChangeHost(
             )
         }
         .stateIn(
-            scope = scope.withDispatcher(dispatchers.default),
+            scope = hostScope.withDispatcher(dispatchers.default),
             started = SharingStarted.WhileSubscribed(5_000),
             initialValue = AddBalanceChangeUiState(),
         )
 
-    fun selectFundSource(fundSource: FundSource) {
+    fun selectFundSource(fundSource: FundSource) = hostScope.launch {
         formState.update { it.copy(selectedFundSource = fundSource, errorMessage = null) }
     }
 
-    fun updateBalance(balance: String) {
+    fun updateBalance(balance: String) = hostScope.launch {
         formState.update { it.copy(balance = balance, errorMessage = null) }
     }
 
-    fun updateNote(note: String) {
+    fun updateNote(note: String) = hostScope.launch {
         formState.update { it.copy(note = note) }
     }
 
-    fun extractBalanceFromImage(imageReference: String) {
+    fun extractBalanceFromImage(imageReference: String) = hostScope.launch {
         pendingImageReference.value = imageReference
         analyzeImage(imageReference)
     }
 
     private fun analyzeImage(imageReference: String) {
         imageAnalysisJob?.cancel()
-        imageAnalysisJob = scope.launch(dispatchers.io) {
-            formState.update {
-                it.copy(
-                    isImageAnalyzing = true,
-                    errorMessage = null,
-                )
-            }
+        formState.update { it.copy(isImageAnalyzing = true, errorMessage = null) }
+        imageAnalysisJob = hostScope.launch {
 
-            val target = imageAnalysisTarget.first()
-            val result = imageAnalyzer.extractBalanceFromImage(imageReference, target)
-            result.onSuccess { balance ->
-                pendingImageReference.value = null
-                formState.update {
-                    it.copy(
-                        balance = formatBalanceForInput(balance),
-                        isImageAnalyzing = false,
-                    )
-                }
-            }.onFailure { error ->
-                if (error is LlmdAuthorizationException) {
-                    formState.update { it.copy(isImageAnalyzing = false) }
-                    mutableEffects.emit(AddBalanceChangeEffect.RequestAuthorization(target))
-                } else {
+            try {
+                val target = withContext(dispatchers.io) { imageAnalysisTarget.first() }
+                val result = withContext(dispatchers.io) { imageAnalyzer.extractBalanceFromImage(imageReference, target) }
+                result.onSuccess { balance ->
                     pendingImageReference.value = null
                     formState.update {
                         it.copy(
+                            balance = formatBalanceForInput(balance),
                             isImageAnalyzing = false,
-                            errorMessage = error.message ?: "Failed to extract balance",
                         )
                     }
+                }.onFailure { error ->
+                    if (error is LlmdAuthorizationException) {
+                        formState.update { it.copy(isImageAnalyzing = false) }
+                        mutableEffects.emit(AddBalanceChangeEffect.RequestAuthorization(target))
+                    } else {
+                        pendingImageReference.value = null
+                        formState.update {
+                            it.copy(
+                                isImageAnalyzing = false,
+                                errorMessage = error.message ?: "Failed to extract balance",
+                            )
+                        }
+                    }
                 }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                pendingImageReference.value = null
+                formState.update { it.copy(errorMessage = "Failed to load image recognition settings") }
+            } finally {
+                if (isActive) formState.update { it.copy(isImageAnalyzing = false) }
             }
         }
     }
 
-    fun onAuthorizationResult(authorized: Boolean) {
+    fun onAuthorizationResult(authorized: Boolean) = hostScope.launch {
         val imageReference = pendingImageReference.value
         if (authorized && imageReference != null) {
             analyzeImage(imageReference)
@@ -131,23 +140,23 @@ class AddBalanceChangeHost(
         }
     }
 
-    fun saveBalanceChange() {
+    fun saveBalanceChange() = hostScope.launch {
         val state = formState.value
         val fundSource = state.selectedFundSource
         if (fundSource == null) {
             formState.update { it.copy(errorMessage = "Select a fund source") }
-            return
+            return@launch
         }
         val balance = parseBalanceInput(state.balance)
         if (balance == null) {
             formState.update { it.copy(errorMessage = "Enter a valid balance") }
-            return
+            return@launch
         }
-        if (state.isSaving) return
+        if (state.isSaving || state.isImageAnalyzing) return@launch
 
         formState.update { it.copy(isSaving = true, errorMessage = null) }
-        scope.launch(dispatchers.io) {
-            try {
+        try {
+            withContext(dispatchers.io) {
                 val currentBalance = repository.getBalanceChangesByFundSource(fundSource.id)
                     .firstOrNull()
                     ?.firstOrNull()
@@ -161,23 +170,23 @@ class AddBalanceChangeHost(
                         note = state.note.ifBlank { null },
                     )
                 )
-                pendingImageReference.value = null
-                formState.value = AddBalanceChangeUiState()
-                mutableEffects.emit(AddBalanceChangeEffect.Saved)
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Exception) {
-                formState.update {
-                    it.copy(errorMessage = error.message ?: "Failed to save balance")
-                }
-            } finally {
-                formState.update { it.copy(isSaving = false) }
             }
+            pendingImageReference.value = null
+            formState.value = AddBalanceChangeUiState()
+            mutableEffects.emit(AddBalanceChangeEffect.Saved)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            formState.update {
+                it.copy(errorMessage = error.message ?: "Failed to save balance")
+            }
+        } finally {
+            formState.update { it.copy(isSaving = false) }
         }
     }
 
     override fun close() {
-        imageAnalysisJob?.cancel()
+        hostScope.cancel()
         imageAnalyzer.close()
     }
 }
