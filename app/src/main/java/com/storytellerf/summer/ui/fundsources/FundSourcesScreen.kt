@@ -56,6 +56,9 @@ import com.storytellerf.summer.data.db.SummerDatabase
 import com.storytellerf.summer.data.db.entity.FundSource
 import com.storytellerf.summer.data.llmd.DataStoreLlmdTargetSettings
 import com.storytellerf.summer.data.llmd.LlmdTarget
+import com.storytellerf.summer.data.recognition.DataStoreRecognitionSettings
+import com.storytellerf.summer.ui.recognition.RecognitionSettingsCard
+import com.storytellerf.summer.ui.recognition.RecognitionSettingsViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -71,6 +74,9 @@ fun FundSourcesScreen(
         )
     ),
 ) {
+    val recognitionViewModel: RecognitionSettingsViewModel = viewModel(
+        factory = RecognitionSettingsViewModel.Factory(DataStoreRecognitionSettings(LocalContext.current.applicationContext)),
+    )
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var showDialog by remember { mutableStateOf(false) }
     var editingFundSource by remember { mutableStateOf<FundSource?>(null) }
@@ -107,6 +113,7 @@ fun FundSourcesScreen(
             }
             is FundSourcesUiState.Success -> {
                 FundSourcesContent(
+                    recognitionViewModel = recognitionViewModel,
                     fundSources = s.fundSources,
                     selectedLlmdTarget = s.selectedLlmdTarget,
                     onSelectLlmdTarget = viewModel::selectLlmdTarget,
@@ -167,6 +174,7 @@ fun FundSourcesScreen(
 
 @Composable
 private fun FundSourcesContent(
+    recognitionViewModel: RecognitionSettingsViewModel,
     fundSources: List<FundSource>,
     selectedLlmdTarget: LlmdTarget,
     onSelectLlmdTarget: (LlmdTarget) -> Unit,
@@ -179,6 +187,7 @@ private fun FundSourcesContent(
         contentPadding = PaddingValues(start = 20.dp, top = 12.dp, end = 20.dp, bottom = 104.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        item { RecognitionSettingsCard(recognitionViewModel) }
         item {
             LlmdTargetCard(
                 selectedTarget = selectedLlmdTarget,

@@ -5,7 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.storytellerf.summer.data.DataRepository
 import com.storytellerf.summer.data.db.entity.FundSource
-import com.storytellerf.summer.data.llmd.BalanceImageAnalyzer
+import com.storytellerf.summer.data.recognition.BalanceImageAnalyzer
 import com.storytellerf.summer.data.llmd.LlmdTarget
 import com.storytellerf.summer.ui.host.AppDispatchers
 import kotlinx.coroutines.flow.Flow

@@ -17,8 +17,17 @@ nav3Core = "1.0.1"
 lifecycleViewmodelNav3 = "2.10.0"
 easylauncher = "6.4.1"
 datastore = "1.2.1"
+koog = "1.3.0"
+ktor = "3.3.3"
 
 [libraries]
+koog-openai = { module = "ai.koog:prompt-executor-openai-client", version.ref = "koog" }
+koog-anthropic = { module = "ai.koog:prompt-executor-anthropic-client", version.ref = "koog" }
+koog-openrouter = { module = "ai.koog:prompt-executor-openrouter-client", version.ref = "koog" }
+koog-http-ktor = { module = "ai.koog:http-client-ktor", version.ref = "koog" }
+ktor-client-okhttp = { module = "io.ktor:ktor-client-okhttp", version.ref = "ktor" }
+ktor-client-mock = { module = "io.ktor:ktor-client-mock", version.ref = "ktor" }
+
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "androidxCore" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidxActivity" }
 androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "androidxComposeBom" }
