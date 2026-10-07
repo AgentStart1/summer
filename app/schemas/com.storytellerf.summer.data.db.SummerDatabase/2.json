@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 2,
-    "identityHash": "f84d1684beda8021438a6de39ad59a12",
+    "identityHash": "48dca4ca18a0a39bc9fb38bae8f7afc5",
     "entities": [
       {
         "tableName": "fund_sources",
@@ -42,7 +42,7 @@
       },
       {
         "tableName": "balance_changes",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `fundSourceId` INTEGER NOT NULL, `newBalance` REAL NOT NULL, `previousBalance` REAL, `note` TEXT, `timestamp` INTEGER NOT NULL, `imagePath` TEXT, `coveredOrderAmount` REAL NOT NULL DEFAULT 0.0, FOREIGN KEY(`fundSourceId`) REFERENCES `fund_sources`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `fundSourceId` INTEGER NOT NULL, `newBalance` REAL NOT NULL, `previousBalance` REAL, `note` TEXT, `timestamp` INTEGER NOT NULL, `imagePath` TEXT, `coveredOrderAmount` REAL NOT NULL DEFAULT 0.0, `timelineGroupId` INTEGER, FOREIGN KEY(`fundSourceId`) REFERENCES `fund_sources`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
         "fields": [
           {
             "fieldPath": "id",
@@ -89,6 +89,11 @@
             "affinity": "REAL",
             "notNull": true,
             "defaultValue": "0.0"
+          },
+          {
+            "fieldPath": "timelineGroupId",
+            "columnName": "timelineGroupId",
+            "affinity": "INTEGER"
           }
         ],
         "primaryKey": {
@@ -115,6 +120,15 @@
             ],
             "orders": [],
             "createSql": "CREATE INDEX IF NOT EXISTS `index_balance_changes_timestamp` ON `${TABLE_NAME}` (`timestamp`)"
+          },
+          {
+            "name": "index_balance_changes_timelineGroupId",
+            "unique": false,
+            "columnNames": [
+              "timelineGroupId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_balance_changes_timelineGroupId` ON `${TABLE_NAME}` (`timelineGroupId`)"
           },
           {
             "name": "index_balance_changes_fundSourceId_timestamp_id",
@@ -272,11 +286,59 @@
             ]
           }
         ]
+      },
+      {
+        "tableName": "timeline_balance_groups",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `timestamp` INTEGER NOT NULL, `startTimestamp` INTEGER NOT NULL, `sortId` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "timestamp",
+            "columnName": "timestamp",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startTimestamp",
+            "columnName": "startTimestamp",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sortId",
+            "columnName": "sortId",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_timeline_balance_groups_timestamp_sortId",
+            "unique": false,
+            "columnNames": [
+              "timestamp",
+              "sortId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_timeline_balance_groups_timestamp_sortId` ON `${TABLE_NAME}` (`timestamp`, `sortId`)"
+          }
+        ]
       }
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'f84d1684beda8021438a6de39ad59a12')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '48dca4ca18a0a39bc9fb38bae8f7afc5')"
     ]
   }
 }

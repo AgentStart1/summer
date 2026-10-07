@@ -2,6 +2,8 @@ package com.storytellerf.summer.testing
 
 import com.storytellerf.summer.data.DataRepository
 import com.storytellerf.summer.data.TimelinePage
+import com.storytellerf.summer.data.BalanceGroupingRow
+import com.storytellerf.summer.data.groupBalanceRows
 import com.storytellerf.summer.data.db.entity.BalanceImpactRecord
 import kotlinx.coroutines.flow.combine
 import com.storytellerf.summer.data.db.entity.BalanceChange
@@ -45,9 +47,11 @@ open class FakeDataRepository(
             val records = importedTransactions.value.sortedWith(compareByDescending<BalanceImpactRecord> { it.timestamp }.thenByDescending { it.id }).drop(offset)
             return TimelinePage(emptyList(), emptyList(), mutableFundSources.value, records.take(snapshotCount), records.size > snapshotCount)
         }
-        val changes = sorted.drop(offset).take(snapshotCount)
-        val older = sorted.drop(offset + changes.size)
-        val upper = sorted.getOrNull(offset - 1)?.timestamp
+        val groups = groupBalanceRows(sorted.map { BalanceGroupingRow(it.id, it.fundSourceId, it.newBalance, it.timestamp) })
+        val byId = sorted.associateBy { it.id }
+        val changes = groups.drop(offset).take(snapshotCount).flatten().map { byId.getValue(it.id) }
+        val older = groups.drop(offset + snapshotCount).flatten().map { byId.getValue(it.id) }
+        val upper = groups.getOrNull(offset - 1)?.lastOrNull()?.timestamp
         val lower = if (older.isEmpty()) null else changes.lastOrNull()?.timestamp
         return TimelinePage(changes, older.distinctBy { it.fundSourceId }, mutableFundSources.value,
             importedTransactions.value.filter { (upper == null || it.timestamp < upper) && (lower == null || it.timestamp >= lower) }, older.isNotEmpty())
@@ -115,6 +119,9 @@ open class FakeDataRepository(
         recomputeCoverage()
         return inserted.id
     }
+
+    override suspend fun insertBalanceChanges(changes: List<BalanceChange>): List<Long> =
+        changes.map { insertBalanceChange(it) }
 
     override suspend fun updateBalanceChange(balanceChange: BalanceChange) {
         assertDispatcher(expectedIoDispatcher)

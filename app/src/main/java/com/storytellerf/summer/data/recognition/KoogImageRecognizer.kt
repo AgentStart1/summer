@@ -25,11 +25,15 @@ fun interface RemoteImageRecognizer {
     suspend fun recognize(backend: RecognitionBackend, connection: KoogConnection, jpeg: ByteArray): Double
     suspend fun recognizeTransactions(backend: RecognitionBackend, connection: KoogConnection, jpeg: ByteArray): List<RecognizedTransaction> =
         throw UnsupportedOperationException("Transaction recognition is unavailable")
+    suspend fun recognizeBalances(backend: RecognitionBackend, connection: KoogConnection, jpeg: ByteArray, targets: List<BalanceReadTarget>): List<RecognizedAccountBalance> =
+        throw UnsupportedOperationException("Requested balance recognition is unavailable")
 }
 
 class KoogImageRecognizer(
     private val transportFactory: () -> HttpClient = { HttpClient(OkHttp) },
 ) : RemoteImageRecognizer {
+    override suspend fun recognizeBalances(backend: RecognitionBackend, connection: KoogConnection, jpeg: ByteArray, targets: List<BalanceReadTarget>): List<RecognizedAccountBalance> =
+        parseBalances(execute(backend, connection, jpeg, balancesPrompt(targets), 8192), targets)
     override suspend fun recognize(backend: RecognitionBackend, connection: KoogConnection, jpeg: ByteArray): Double =
         parseRemoteBalance(execute(backend, connection, jpeg, REMOTE_BALANCE_PROMPT, 1024))
 

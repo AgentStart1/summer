@@ -8,6 +8,8 @@ import com.storytellerf.summer.data.db.entity.BalanceImpactRecord
 
 @Dao
 interface BalanceImpactRecordDao {
+    @Query("SELECT COUNT(*) FROM balance_impact_records")
+    suspend fun count(): Int
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertAll(records: List<BalanceImpactRecord>): List<Long>
 

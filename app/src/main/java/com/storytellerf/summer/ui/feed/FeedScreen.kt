@@ -223,7 +223,8 @@ private fun BalanceSnapshotCard(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = formatDate(snapshot.timestamp),
+                        text = if (snapshot.startTimestamp == snapshot.timestamp) formatDate(snapshot.timestamp)
+                            else "${formatDate(snapshot.startTimestamp)} – ${formatDate(snapshot.timestamp)}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

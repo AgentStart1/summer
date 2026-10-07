@@ -7,15 +7,15 @@ import com.storytellerf.summer.ui.host.AppDispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 
-/** Keys count snapshots (transactions when no snapshots exist), not flattened rows. */
+/** Keys count complete balance groups (transactions without snapshots), not flattened rows. */
 class FeedPagingSource(
     private val repository: DataRepository,
     private val dispatchers: AppDispatchers,
     private val snapshotPageSize: Int = 20,
 ) : PagingSource<Int, TimelineItem>() {
     override suspend fun load(params: LoadParams<Int>): LoadResult<Int, TimelineItem> = try {
-        val offset = params.key ?: 0
-        val page = withContext(dispatchers.io) { repository.loadTimelinePage(offset, snapshotPageSize) }
+        val page = withContext(dispatchers.io) { repository.loadTimelinePage(params.key ?: 0, snapshotPageSize) }
+        val offset = page.offset ?: params.key ?: 0
         val items = withContext(dispatchers.default) { flattenTimeline(page, offset == 0) }
         LoadResult.Page(items, if (offset == 0) null else (offset - snapshotPageSize).coerceAtLeast(0),
             if (page.hasMore) offset + snapshotPageSize else null)

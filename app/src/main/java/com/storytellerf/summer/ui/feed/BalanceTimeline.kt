@@ -1,6 +1,8 @@
 package com.storytellerf.summer.ui.feed
 
 import com.storytellerf.summer.data.TimelinePage
+import com.storytellerf.summer.data.BalanceGroupingRow
+import com.storytellerf.summer.data.groupBalanceRows
 import com.storytellerf.summer.data.db.entity.BalanceChange
 import com.storytellerf.summer.data.db.entity.BalanceImpactRecord
 import com.storytellerf.summer.data.db.entity.FundSource
@@ -19,12 +21,13 @@ sealed interface TimelineItem {
         override val timestamp = record.timestamp
     }
     data class Difference(
-        val balanceChangeId: Long,
+        val balanceGroupId: Long,
         override val timestamp: Long,
         val amount: Double,
         val fundSourceName: String,
+        val fundSourceId: Long = 0,
     ) : TimelineItem {
-        override val key = "difference:$balanceChangeId"
+        override val key = "difference:$balanceGroupId:$fundSourceId"
     }
 }
 
@@ -33,6 +36,8 @@ data class BalanceSnapshot(
     val timestamp: Long,
     val totalBalance: Double,
     val fundBalances: List<FundBalance>,
+    val startTimestamp: Long = timestamp,
+    val recordIds: List<Long> = listOf(id),
 )
 
 data class FundBalance(val fundSourceId: Long, val fundSourceName: String, val balance: Double)
@@ -45,12 +50,16 @@ internal fun buildBalanceTimeline(
     val sourceById = fundSources.associateBy(FundSource::id)
     val orderedSources = fundSources.sortedWith(compareBy(FundSource::createdAt, FundSource::name, FundSource::id))
     val balances = precedingBalances.associate { it.fundSourceId to it.newBalance }.toMutableMap()
-    return balanceChanges.sortedWith(compareBy(BalanceChange::timestamp, BalanceChange::id)).map { change ->
+    val groupsByEnd = groupBalanceRows(balanceChanges.map { BalanceGroupingRow(it.id, it.fundSourceId, it.newBalance, it.timestamp) })
+        .associateBy { it.first().id }
+    return balanceChanges.sortedWith(compareBy(BalanceChange::timestamp, BalanceChange::id)).mapNotNull { change ->
         balances[change.fundSourceId] = change.newBalance
+        val group = groupsByEnd[change.id] ?: return@mapNotNull null
         val funds = orderedSources.mapNotNull { source ->
             balances[source.id]?.let { FundBalance(source.id, sourceById.getValue(source.id).name, it) }
         }
-        BalanceSnapshot(change.id, change.timestamp, funds.sumOf(FundBalance::balance), funds)
+        BalanceSnapshot(group.minOf { it.id }, change.timestamp, funds.sumOf(FundBalance::balance), funds,
+            group.last().timestamp, group.map { it.id })
     }.asReversed()
 }
 
@@ -58,14 +67,23 @@ internal fun flattenTimeline(page: TimelinePage, isFirstPage: Boolean): List<Tim
     val snapshots = buildBalanceTimeline(page.changes, page.fundSources, page.precedingBalances)
     val names = page.fundSources.associate { it.id to it.name }
     val previous = page.precedingBalances.associate { it.fundSourceId to it.newBalance }.toMutableMap()
-    val differences = page.changes.sortedWith(compareBy(BalanceChange::timestamp, BalanceChange::id)).mapNotNull { change ->
+    val groupByRecord = snapshots.flatMap { snapshot -> snapshot.recordIds.map { it to snapshot } }.toMap()
+    val remainingByAccount = mutableMapOf<Pair<Long, Long>, BigDecimal>()
+    page.changes.sortedWith(compareBy(BalanceChange::timestamp, BalanceChange::id)).forEach { change ->
         val baseline = previous.put(change.fundSourceId, change.newBalance) ?: change.previousBalance
-        baseline?.let {
-            val remaining = BigDecimal.valueOf(change.newBalance).subtract(BigDecimal.valueOf(it))
-                .subtract(BigDecimal.valueOf(change.coveredOrderAmount)).setScale(2, RoundingMode.HALF_UP)
-            if (remaining.signum() == 0) null else TimelineItem.Difference(
-                change.id, change.timestamp, remaining.toDouble(), names[change.fundSourceId] ?: "Unknown fund")
+        if (baseline != null) {
+            val group = groupByRecord.getValue(change.id)
+            val key = group.id to change.fundSourceId
+            val remaining = BigDecimal.valueOf(change.newBalance).subtract(BigDecimal.valueOf(baseline))
+                .subtract(BigDecimal.valueOf(change.coveredOrderAmount))
+            remainingByAccount[key] = remainingByAccount.getOrDefault(key, BigDecimal.ZERO).add(remaining)
         }
+    }
+    val snapshotsById = snapshots.associateBy { it.id }
+    val differences = remainingByAccount.mapNotNull { (key, amount) ->
+        val remaining = amount.setScale(2, RoundingMode.HALF_UP)
+        if (remaining.signum() == 0) null else TimelineItem.Difference(key.first,
+            snapshotsById.getValue(key.first).timestamp, remaining.toDouble(), names[key.second] ?: "Unknown fund", key.second)
     }
     return (snapshots.mapIndexed { index, snapshot ->
         TimelineItem.Snapshot(snapshot, isFirstPage && index == 0)
@@ -76,6 +94,6 @@ internal fun flattenTimeline(page: TimelinePage, isFirstPage: Boolean): List<Tim
         .thenByDescending { when (it) {
             is TimelineItem.Snapshot -> it.snapshot.id
             is TimelineItem.Transaction -> it.record.id
-            is TimelineItem.Difference -> it.balanceChangeId
+            is TimelineItem.Difference -> it.balanceGroupId
         } })
 }

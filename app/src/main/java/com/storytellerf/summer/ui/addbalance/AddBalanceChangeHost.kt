@@ -5,6 +5,7 @@ import com.storytellerf.summer.data.db.entity.BalanceChange
 import com.storytellerf.summer.data.db.entity.FundSource
 import com.storytellerf.summer.data.recognition.FinanceImageAnalyzer
 import com.storytellerf.summer.data.recognition.ImageCreationTimeReader
+import com.storytellerf.summer.data.recognition.BalanceReadTarget
 import com.storytellerf.summer.data.recognition.formatLocalDateTime
 import com.storytellerf.summer.data.recognition.parseLocalDateTime
 import com.storytellerf.summer.data.llmd.LlmdAuthorizationException
@@ -15,6 +16,7 @@ import java.text.NumberFormat
 import java.text.ParsePosition
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -53,6 +55,7 @@ class AddBalanceChangeHost(
     private val pendingImageReference = MutableStateFlow<String?>(null)
     private val mutableEffects = MutableSharedFlow<AddBalanceChangeEffect>()
     private var imageAnalysisJob: Job? = null
+    private var pendingBatch: PendingBalanceBatch? = null
 
     val effects: SharedFlow<AddBalanceChangeEffect> = mutableEffects.asSharedFlow()
 
@@ -77,7 +80,98 @@ class AddBalanceChangeHost(
         )
 
     fun selectFundSource(fundSource: FundSource) = hostScope.launch {
-        formState.update { it.copy(selectedFundSource = fundSource, errorMessage = null) }
+        formState.update { it.copy(selectedFundSource = fundSource, errorMessage = null,
+            imageTargets = it.imageTargets.ifEmpty { listOf(BalanceReadTarget(fundSource.id, fundSource.name, "Account balance")) }) }
+    }
+
+    fun toggleImageTarget(source: FundSource) = hostScope.launch {
+        if (!formState.value.isSaving && !formState.value.isImageAnalyzing && formState.value.balanceRows.isEmpty()) formState.update { state ->
+            state.copy(imageTargets = if (state.imageTargets.any { it.fundSourceId == source.id }) state.imageTargets.filterNot { it.fundSourceId == source.id }
+                else state.imageTargets + BalanceReadTarget(source.id, source.name, "Account balance"), errorMessage = null)
+        }
+    }
+
+    fun updateBalanceToRead(sourceId: Long, label: String) = hostScope.launch {
+        if (!formState.value.isSaving && !formState.value.isImageAnalyzing && formState.value.balanceRows.isEmpty()) formState.update { state ->
+            state.copy(imageTargets = state.imageTargets.map { if (it.fundSourceId == sourceId) it.copy(balanceToRead = label) else it })
+        }
+    }
+
+    fun updateBalanceRow(key: String, row: BalanceDraft) = hostScope.launch {
+        if (!formState.value.isSaving && !formState.value.isImageAnalyzing) formState.update { state ->
+            state.copy(balanceRows = state.balanceRows.map { if (it.key == key) row.copy(key = key, imagePath = it.imagePath, imageIndex = it.imageIndex) else it }, errorMessage = null)
+        }
+    }
+
+    fun clearBalancePreview() = hostScope.launch {
+        if (!formState.value.isSaving && !formState.value.isImageAnalyzing) {
+            pendingBatch = null
+            formState.update { it.copy(balanceRows = emptyList(), errorMessage = null) }
+        }
+    }
+
+    fun extractBalancesFromImages(images: List<String>) = hostScope.launch {
+        if (formState.value.isSaving || formState.value.isImageAnalyzing) return@launch
+        val targets = formState.value.imageTargets.toList()
+        if (images.isEmpty() || images.size > 20 || targets.size !in 1..30 || targets.any { it.balanceToRead.isBlank() }) {
+            formState.update { it.copy(errorMessage = "Select accounts and balance labels first; choose 1–20 images") }
+            return@launch
+        }
+        pendingImageReference.value = null
+        pendingBatch = PendingBalanceBatch(images.toList(), targets, fallbackTimestamp = now())
+        formState.update { it.copy(balanceRows = emptyList(), errorMessage = null) }
+        analyzeBatch()
+    }
+
+    private fun analyzeBatch() {
+        imageAnalysisJob?.cancel()
+        formState.update { it.copy(isImageAnalyzing = true) }
+        imageAnalysisJob = hostScope.launch {
+            try {
+                val target = withContext(dispatchers.io) { imageAnalysisTarget.first() }
+                while (true) {
+                    val batch = pendingBatch ?: break
+                    if (batch.index >= batch.images.size) {
+                        pendingBatch = null
+                        formState.update { it.copy(errorMessage = batch.errors.takeIf { errors -> errors.isNotEmpty() }?.joinToString("\n")) }
+                        break
+                    }
+                    val image = batch.images[batch.index]
+                    val timestamp = batch.timestamp ?: withContext(dispatchers.io) {
+                        imageCreationTimeReader.readCreationTime(image)?.takeIf { it > 0 } ?: batch.fallbackTimestamp
+                    }
+                    pendingBatch = batch.copy(timestamp = timestamp)
+                    val result = withContext(dispatchers.io) { imageAnalyzer.extractBalancesFromImage(image, batch.targets, target) }
+                    val error = result.exceptionOrNull()
+                    if (error is CancellationException) throw error
+                    if (error is LlmdAuthorizationException) {
+                        formState.update { it.copy(isImageAnalyzing = false) }
+                        mutableEffects.emit(AddBalanceChangeEffect.RequestAuthorization(target))
+                        return@launch
+                    }
+                    val recognized = result.getOrNull()
+                    val valid = recognized?.records?.takeIf { records -> records.isNotEmpty() && records.all {
+                        it.balance.isFinite() && (it.fundSourceId == null || batch.targets.any { target -> target.fundSourceId == it.fundSourceId })
+                    } }
+                    if (valid != null) {
+                        val drafts = withContext(dispatchers.default) { valid.mapIndexed { row, balance -> BalanceDraft(
+                            key = "${batch.index}:$row", imageIndex = batch.index, fundSourceId = balance.fundSourceId,
+                            balance = formatBalanceForInput(balance.balance), label = balance.label.orEmpty(),
+                            dateTime = formatLocalDateTime(timestamp), timestamp = timestamp, imagePath = recognized.imagePath,
+                        ) } }
+                        formState.update { it.copy(balanceRows = it.balanceRows + drafts) }
+                        pendingBatch = batch.copy(index = batch.index + 1, timestamp = null)
+                    } else pendingBatch = batch.copy(index = batch.index + 1, timestamp = null,
+                        errors = batch.errors + "Image ${batch.index + 1}: no requested balances recognized; check accounts and recognition settings")
+                }
+            } catch (error: CancellationException) { throw error }
+            catch (_: Exception) {
+                pendingBatch = null
+                formState.update { it.copy(errorMessage = "Could not read balance images. Review any completed rows and try again.") }
+            } finally {
+                if (isActive) formState.update { it.copy(isImageAnalyzing = false) }
+            }
+        }
     }
 
     fun updateBalance(balance: String) = hostScope.launch {
@@ -149,6 +243,14 @@ class AddBalanceChangeHost(
     }
 
     fun onAuthorizationResult(authorized: Boolean) = hostScope.launch {
+        if (pendingBatch != null) {
+            if (authorized) analyzeBatch()
+            else {
+                pendingBatch = null
+                formState.update { it.copy(isImageAnalyzing = false, errorMessage = "llmd authorization was not granted") }
+            }
+            return@launch
+        }
         val imageReference = pendingImageReference.value
         if (authorized && imageReference != null) {
             analyzeImage(imageReference)
@@ -162,6 +264,11 @@ class AddBalanceChangeHost(
 
     fun saveBalanceChange() = hostScope.launch {
         val state = formState.value
+        if (state.isSaving || state.isImageAnalyzing) return@launch
+        if (state.balanceRows.isNotEmpty()) {
+            saveBalanceBatch(state)
+            return@launch
+        }
         val fundSource = state.selectedFundSource
         if (fundSource == null) {
             formState.update { it.copy(errorMessage = "Select a fund source") }
@@ -212,6 +319,28 @@ class AddBalanceChangeHost(
         }
     }
 
+    private suspend fun saveBalanceBatch(state: AddBalanceChangeUiState) {
+        val selected = state.balanceRows.filter { it.selected }
+        if (selected.isEmpty() || selected.any { row -> row.fundSourceId == null || state.imageTargets.none { it.fundSourceId == row.fundSourceId } ||
+                parseBalanceInput(row.balance) == null || row.timestamp == null || row.timestamp <= 0 }) {
+            formState.update { it.copy(errorMessage = "Assign each selected balance to an account and verify its amount and local date/time") }
+            return
+        }
+        formState.update { it.copy(isSaving = true, errorMessage = null) }
+        try {
+            val records = withContext(dispatchers.default) { selected.map { row -> BalanceChange(
+                fundSourceId = requireNotNull(row.fundSourceId), newBalance = requireNotNull(parseBalanceInput(row.balance)),
+                timestamp = requireNotNull(row.timestamp), imagePath = row.imagePath, note = row.note.ifBlank { null },
+            ) } }
+            withContext(dispatchers.io) { repository.insertBalanceChanges(records) }
+            pendingBatch = null
+            formState.value = freshForm()
+            mutableEffects.emit(AddBalanceChangeEffect.Saved)
+        } catch (error: CancellationException) { throw error }
+        catch (_: Exception) { formState.update { it.copy(errorMessage = "Could not save balances; check that selected accounts still exist") } }
+        finally { if (currentCoroutineContext().isActive) formState.update { it.copy(isSaving = false) } }
+    }
+
     override fun close() {
         hostScope.cancel()
         imageAnalyzer.close()
@@ -239,6 +368,18 @@ data class AddBalanceChangeUiState(
     val imagePath: String? = null,
     val dateTime: String = "",
     val timestamp: Long? = null,
+    val imageTargets: List<BalanceReadTarget> = emptyList(),
+    val balanceRows: List<BalanceDraft> = emptyList(),
+)
+
+data class BalanceDraft(
+    val key: String, val imageIndex: Int, val fundSourceId: Long?, val balance: String, val label: String,
+    val dateTime: String, val timestamp: Long?, val imagePath: String?, val selected: Boolean = true, val note: String = "",
+)
+
+private data class PendingBalanceBatch(
+    val images: List<String>, val targets: List<BalanceReadTarget>, val index: Int = 0,
+    val timestamp: Long? = null, val fallbackTimestamp: Long, val errors: List<String> = emptyList(),
 )
 
 internal fun formatBalanceForInput(balance: Double): String =

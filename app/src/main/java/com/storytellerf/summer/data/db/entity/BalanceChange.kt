@@ -16,7 +16,7 @@ import androidx.room.PrimaryKey
             onDelete = ForeignKey.CASCADE,
         ),
     ],
-    indices = [Index("fundSourceId"), Index("timestamp"), Index(value = ["fundSourceId", "timestamp", "id"])],
+    indices = [Index("fundSourceId"), Index("timestamp"), Index("timelineGroupId"), Index(value = ["fundSourceId", "timestamp", "id"])],
 )
 data class BalanceChange(
     @PrimaryKey(autoGenerate = true)
@@ -29,4 +29,5 @@ data class BalanceChange(
     val imagePath: String? = null,
     @ColumnInfo(defaultValue = "0.0")
     val coveredOrderAmount: Double = 0.0,
+    val timelineGroupId: Long? = null,
 )

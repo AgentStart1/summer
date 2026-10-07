@@ -30,6 +30,19 @@ time. Selecting an image uses its original capture/creation metadata when availa
 images without readable creation metadata default to the current time. Check or correct
 the time for historical screenshots before saving.
 
+Balance records within a total span of **10 minutes** appear in one timeline node when
+repeated readings of the same account have the same balance. A different balance starts a
+new node; orders can appear within the time span without splitting it. Original readings
+and their image links remain saved independently.
+
+For image balance entry, select the accounts under **Read balances from images** and specify
+the balance label to read for each account (for example, available cash or savings balance).
+Choose one or several pictures with **Import from Images**. A picture can contain multiple
+account balances. Review all results together, assign unidentified balances to a selected
+account, edit amount/time/note, and uncheck unwanted rows before **Save selected balances**.
+Each picture supplies its own creation time and compressed image link. Completed results
+remain available if another picture fails; saving selected results is atomic.
+
 Open **Settings → Image recognition** to choose **LLMD**, **OpenAI**, **Anthropic (Claude)**,
 **OpenRouter**, or an **OpenAI-compatible** API provider. LLMD is selected by default.
 

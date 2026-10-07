@@ -7,10 +7,20 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
 import com.storytellerf.summer.data.db.entity.BalanceChange
+import com.storytellerf.summer.data.BalanceGroupingRow
 import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface BalanceChangeDao {
+    @Query("SELECT id, fundSourceId, newBalance, timestamp FROM balance_changes ORDER BY timestamp DESC, id DESC")
+    suspend fun getGroupingRows(): List<BalanceGroupingRow>
+    @Query("SELECT EXISTS(SELECT 1 FROM balance_changes WHERE timelineGroupId IS NULL)")
+    suspend fun hasUngroupedRows(): Boolean
+    @Query("SELECT * FROM balance_changes WHERE timelineGroupId IN (:groupIds) ORDER BY timestamp DESC, id DESC")
+    suspend fun getByGroups(groupIds: List<Long>): List<BalanceChange>
+    @Update(entity = BalanceChange::class)
+    suspend fun updateGroupLinks(links: List<BalanceGroupLink>)
+    @Insert suspend fun insertAll(changes: List<BalanceChange>): List<Long>
     @Query("SELECT * FROM balance_changes ORDER BY timestamp DESC, id DESC")
     fun getAll(): Flow<List<BalanceChange>>
 
@@ -44,6 +54,8 @@ interface BalanceChangeDao {
     @Delete
     suspend fun delete(balanceChange: BalanceChange)
 }
+
+data class BalanceGroupLink(val id: Long, val timelineGroupId: Long)
 
 // Each order belongs to (previous snapshot time, current snapshot time] for its account.
 // Equal-time snapshots use id order: only the first can own orders at that instant.

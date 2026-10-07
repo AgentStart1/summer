@@ -22,6 +22,18 @@ class ConfiguredImageAnalyzer(
     private val remote: RemoteImageRecognizer = KoogImageRecognizer(),
     private val imageStore: RecognitionImageStore,
 ) : FinanceImageAnalyzer {
+    override suspend fun extractBalancesFromImage(imageReference: String, targets: List<BalanceReadTarget>, target: LlmdTarget): Result<RecognizedBalances> = try {
+        val config = settings.config.first()
+        if (config.backend == RecognitionBackend.Llmd) llmd.extractBalancesFromImage(imageReference, targets, target)
+        else {
+            val connection = config.connectionFor().validated()
+            val jpeg = readJpeg(imageReference)
+            val records = remote.recognizeBalances(config.backend, connection, jpeg, targets)
+            require(records.isNotEmpty())
+            Result.success(RecognizedBalances(records, imageStore.save(jpeg)))
+        }
+    } catch (error: CancellationException) { throw error }
+    catch (error: Exception) { Result.failure(error) }
     override suspend fun extractBalanceFromImage(imageReference: String, target: LlmdTarget): Result<Double> =
         extractBalanceWithImage(imageReference, target).map { it.balance }
 
@@ -77,6 +89,8 @@ fun configuredImageAnalyzer(
         llmd = LlmdImageAnalyzer(appContext, LlmdServiceConnection(appContext), io),
         readJpeg = { reference -> withContext(io) { encoder.encode(reference.toUri()) } },
         remote = object : RemoteImageRecognizer {
+            override suspend fun recognizeBalances(backend: RecognitionBackend, connection: KoogConnection, jpeg: ByteArray, targets: List<BalanceReadTarget>): List<RecognizedAccountBalance> =
+                loggedRecognition(backend, "balances") { remote.recognizeBalances(backend, connection, jpeg, targets) }
             override suspend fun recognize(backend: RecognitionBackend, connection: KoogConnection, jpeg: ByteArray): Double =
                 loggedRecognition(backend, "balance") { remote.recognize(backend, connection, jpeg) }
 

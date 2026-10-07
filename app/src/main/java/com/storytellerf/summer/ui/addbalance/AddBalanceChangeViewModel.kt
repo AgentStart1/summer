@@ -48,6 +48,12 @@ class AddBalanceChangeViewModel(
         host.updateDateTime(dateTime)
     }
 
+    fun toggleImageTarget(source: FundSource) { host.toggleImageTarget(source) }
+    fun updateBalanceToRead(sourceId: Long, label: String) { host.updateBalanceToRead(sourceId, label) }
+    fun extractBalancesFromImages(images: List<String>) { host.extractBalancesFromImages(images) }
+    fun updateBalanceRow(key: String, row: BalanceDraft) { host.updateBalanceRow(key, row) }
+    fun clearBalancePreview() { host.clearBalancePreview() }
+
     fun extractBalanceFromImage(imageReference: String) {
         host.extractBalanceFromImage(imageReference)
     }

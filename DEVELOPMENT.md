@@ -146,16 +146,35 @@ The timeline subtracts persisted coverage from the change in adjacent actual acc
 (falling back to `previousBalance` for an initial legacy record). Differences round to CNY
 cents and disappear at zero; an excess of expenses can produce a positive difference.
 
-`FeedPagingSource` loads 20 balance changes ordered by `(timestamp DESC, id DESC)` per page.
-The repository reads that window, one preceding balance per account via an indexed latest-row query, the fund sources and
-transactions within a single Room transaction. Transaction intervals are lower-inclusive
-and upper-exclusive; the first and last windows also include transactions beyond the newest
-and oldest snapshots. With no balance changes, the source pages transaction rows directly.
-One interval can contain any number of transaction rows, so Paging keys count balance
-changes rather than flattened rows (or transaction offsets when there are no snapshots). Pages flatten into `TimelineItem.Snapshot` and
-`TimelineItem.Transaction`, plus `TimelineItem.Difference` for uncovered amounts, with distinct
-stable keys. Coverage uses account snapshot intervals independently of paging's global time
-windows, so it remains correct when orders and snapshots appear on different pages.
+`groupBalanceRows` partitions readings newest-first. A group's whole timestamp span is
+at most 600,000 milliseconds, and repeated fund-source IDs must have equal balances.
+Orders do not participate in grouping. `timeline_balance_groups` is a rebuildable index,
+with each original `BalanceChange.timelineGroupId` pointing to its group. Group IDs use the
+minimum member ID; adding a newer duplicate reading preserves the ID. Balance/account
+mutations rebuild this index in the same transaction, and the first page read backfills
+ungrouped records after migration. Original records, image paths and coverage are retained.
+
+`FeedPagingSource` loads 20 complete balance groups ordered by newest timestamp and record
+ID per page. It never splits a group, even when it has more than 20 readings. The repository
+reads the group's members, preceding balances per account, fund sources and transactions in
+one Room transaction. Transaction windows are lower-inclusive and upper-exclusive at group
+start times; first/last windows include orders beyond the newest/oldest readings. A refresh
+whose old offset exceeds the current group count clamps to the last available page. With no
+balance readings, paging uses transaction rows directly. Paging keys count groups rather
+than flattened rows. The UI emits one snapshot per group, individual transactions, and one
+aggregated uncovered difference per account/group. Snapshot state follows all original
+readings, and account order coverage remains computed from the original account intervals.
+
+`AddBalanceChangeHost` freezes selected account IDs and requested balance labels before
+sequentially recognizing up to 20 images. Each image defaults to its own creation timestamp;
+unknown account IDs remain unassigned in the preview. Both LLMD and Koog use strict balance
+arrays with selected IDs or null and share one retained JPEG per image. Authorization
+resumes the current image without duplicating completed rows. Failed images leave completed
+rows reviewable. The preview supports account assignment, amount/time/note editing and row
+deselection. All selected rows are validated before `insertBalanceChanges` atomically inserts
+them, recalculates affected account coverage and rebuilds groups. Foreign-key or other write
+failures roll back the entire batch. Database version remains 2 for this PR.
+
 The Host keeps one Pager for its lifetime and invalidates its active PagingSource when any
 timeline table changes. Source creation and invalidation share the serial coordination
 dispatcher, and the observer is cancelled with the Host. Refresh uses the previous paging

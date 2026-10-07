@@ -3,6 +3,11 @@ package com.storytellerf.summer.data.llmd
 import com.storytellerf.summer.data.recognition.RecognitionImageStore
 import com.storytellerf.summer.data.recognition.FileRecognitionImageStore
 import com.storytellerf.summer.data.recognition.RecognizedBalance
+import com.storytellerf.summer.data.recognition.BalanceReadTarget
+import com.storytellerf.summer.data.recognition.RecognizedBalances
+import com.storytellerf.summer.data.recognition.balancesPrompt
+import com.storytellerf.summer.data.recognition.BALANCES_RESPONSE_SCHEMA
+import com.storytellerf.summer.data.recognition.parseBalances
 import com.storytellerf.summer.data.recognition.RecognizedTransactions
 import com.storytellerf.summer.data.recognition.TRANSACTION_EXTRACTION_PROMPT
 import com.storytellerf.summer.data.recognition.TRANSACTION_RESPONSE_SCHEMA
@@ -32,6 +37,10 @@ class LlmdImageAnalyzer(
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val imageStore: RecognitionImageStore = FileRecognitionImageStore(context.applicationContext.filesDir),
 ) : FinanceImageAnalyzer {
+    override suspend fun extractBalancesFromImage(imageReference: String, targets: List<BalanceReadTarget>, target: LlmdTarget): Result<RecognizedBalances> =
+        analyzeImage(imageReference, target, { buildBalancesExtractionRequest(it, targets) }) { response, image ->
+            RecognizedBalances(parseBalances(extractResponseContent(response), targets), imageStore.save(image.jpeg))
+        }
     private val appContext = context.applicationContext
 
     override suspend fun extractBalanceFromImage(imageReference: String, target: LlmdTarget): Result<Double> =
@@ -175,6 +184,16 @@ internal fun parseBalanceFromResponse(responseJson: String): Result<Double> {
 }
 
 private const val MODEL_NAME = "gemma-4-E2B-it"
+
+internal fun buildBalancesExtractionRequest(imageUrl: String, targets: List<BalanceReadTarget>): String = JSONObject().apply {
+    put("model", MODEL_NAME)
+    put("max_tokens", 8192)
+    put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", JSONArray()
+        .put(JSONObject().put("type", "text").put("text", balancesPrompt(targets)))
+        .put(JSONObject().put("type", "image_url").put("image_url", JSONObject().put("url", imageUrl))))))
+    put("response_format", JSONObject().put("type", "json_schema").put("json_schema", JSONObject()
+        .put("name", "balances_extraction").put("strict", true).put("schema", JSONObject(BALANCES_RESPONSE_SCHEMA))))
+}.toString()
 
 const val BALANCE_EXTRACTION_PROMPT = """
 Extract the balance amount from this screenshot.

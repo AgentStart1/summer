@@ -8,6 +8,22 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class BalanceTimelineTest {
+    @Test fun groupedSnapshotUsesOneUnchangedBalancePerAccount_andOrdersDoNotSplitIt() {
+        val changes = listOf(BalanceChange(id = 1, fundSourceId = 1, newBalance = 100.0, previousBalance = 90.0, timestamp = 60_000),
+            BalanceChange(id = 2, fundSourceId = 2, newBalance = 200.0, previousBalance = 150.0, timestamp = 120_000),
+            BalanceChange(id = 3, fundSourceId = 1, newBalance = 100.0, timestamp = 180_000, coveredOrderAmount = 20.0))
+        val record = BalanceImpactRecord(id = 1, fundSourceId = 1, timestamp = 150_000, amount = 20.0, note = null, imageHash = "image", imageRow = 0)
+        val items = flattenTimeline(TimelinePage(changes, emptyList(), listOf(FundSource(id = 1, name = "Bank"), FundSource(id = 2, name = "Wallet")), listOf(record), false), true)
+        val snapshot = items.filterIsInstance<TimelineItem.Snapshot>().single().snapshot
+        assertEquals(300.0, snapshot.totalBalance, 0.0)
+        assertEquals(60_000L, snapshot.startTimestamp)
+        assertEquals(180_000L, snapshot.timestamp)
+        assertEquals(setOf(1L, 2L, 3L), snapshot.recordIds.toSet())
+        assertEquals(listOf(-10.0, 50.0), items.filterIsInstance<TimelineItem.Difference>().map { it.amount })
+        assertEquals(1, items.filterIsInstance<TimelineItem.Transaction>().size)
+        assertEquals(items.size, items.map { it.key }.distinct().size)
+    }
+
     @Test fun uncoveredDifferenceUsesPersistedCoverage_includingOvercoverageAndRounding() {
         val source = FundSource(id = 1, name = "Bank")
         val seed = BalanceChange(id = 1, fundSourceId = 1, newBalance = 1000.0, timestamp = 10)

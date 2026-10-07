@@ -2,7 +2,6 @@ package com.storytellerf.summer.ui.addbalance
 
 import android.app.Activity
 import android.content.Intent
-import android.net.Uri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -114,9 +113,9 @@ fun AddBalanceChangeScreen(
     }
 
     val imagePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent(),
-    ) { uri: Uri? ->
-        uri?.let { viewModel.extractBalanceFromImage(it.toString()) }
+        contract = ActivityResultContracts.GetMultipleContents(),
+    ) { images ->
+        if (images.isNotEmpty()) viewModel.extractBalancesFromImages(images.map { it.toString() })
     }
 
     Scaffold(
@@ -143,18 +142,22 @@ fun AddBalanceChangeScreen(
                         .navigationBarsPadding()
                         .padding(horizontal = 20.dp, vertical = 12.dp)
                         .height(52.dp),
-                    enabled = state.selectedFundSource != null &&
-                        state.balance.isNotBlank() &&
+                    enabled = (if (state.balanceRows.isEmpty()) state.selectedFundSource != null && state.balance.isNotBlank()
+                        else state.balanceRows.any { it.selected }) &&
                         !state.isImageAnalyzing &&
                         !state.isSaving,
                 ) {
                     Icon(Icons.Default.Save, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(if (state.isSaving) "Saving..." else "Save Balance Change")
+                    Text(if (state.isSaving) "Saving..." else if (state.balanceRows.isEmpty()) "Save Balance Change" else "Save selected balances")
                 }
             }
         },
     ) { paddingValues ->
+        if (state.balanceRows.isNotEmpty()) {
+            BalanceImportPreview(state, viewModel, Modifier.padding(paddingValues))
+            return@Scaffold
+        }
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -208,23 +211,25 @@ fun AddBalanceChangeScreen(
                     supportingText = { Text("Enter a negative value if the account is overdrawn.") },
                 )
 
-                OutlinedButton(
-                    onClick = { imagePickerLauncher.launch("image/*") },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !state.isImageAnalyzing && !state.isSaving,
-                ) {
-                    if (state.isImageAnalyzing) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            strokeWidth = 2.dp,
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Analyzing Image...")
-                    } else {
-                        Icon(Icons.Default.ImageSearch, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Import from Image")
+            }
+
+            FormSection(icon = { Icon(Icons.Default.ImageSearch, contentDescription = null) }, title = "Read balances from images") {
+                Text("Select all accounts to read and specify the balance label shown in your images.")
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(state.fundSources, key = { it.id }) { source ->
+                        FilterChip(selected = state.imageTargets.any { it.fundSourceId == source.id },
+                            enabled = !state.isSaving && !state.isImageAnalyzing,
+                            onClick = { viewModel.toggleImageTarget(source) }, label = { Text("Read ${source.name}") })
                     }
+                }
+                state.imageTargets.forEach { target ->
+                    OutlinedTextField(value = target.balanceToRead, onValueChange = { viewModel.updateBalanceToRead(target.fundSourceId, it) },
+                        label = { Text("Balance to read for ${target.name}") }, singleLine = true,
+                        enabled = !state.isSaving && !state.isImageAnalyzing, modifier = Modifier.fillMaxWidth())
+                }
+                OutlinedButton(onClick = { imagePickerLauncher.launch("image/*") }, modifier = Modifier.fillMaxWidth(),
+                    enabled = !state.isImageAnalyzing && !state.isSaving && state.imageTargets.isNotEmpty() && state.imageTargets.all { it.balanceToRead.isNotBlank() }) {
+                    Text(if (state.isImageAnalyzing) "Analyzing Images..." else "Import from Images")
                 }
             }
 
