@@ -147,8 +147,11 @@ changes rather than flattened rows (or transaction offsets when there are no sna
 `TimelineItem.Transaction`, plus `TimelineItem.Difference` for uncovered amounts, with distinct
 stable keys. Coverage uses account snapshot intervals independently of paging's global time
 windows, so it remains correct when orders and snapshots appear on different pages.
-Changes to any timeline table replace
-the paging generation, and the Host caches it for the ViewModel lifetime.
+The Host keeps one Pager for its lifetime and invalidates its active PagingSource when any
+timeline table changes. Source creation and invalidation share the serial coordination
+dispatcher, and the observer is cancelled with the Host. Refresh uses the previous paging
+state's anchor rather than starting over at offset zero. PagingData is cached for the
+ViewModel lifetime.
 
 Unit tests cover provider requests, parsing, preview/selection, authorization, cancellation
 and paging. `TransactionDatabaseTest` covers Room migration, cross-image ID deduplication,
