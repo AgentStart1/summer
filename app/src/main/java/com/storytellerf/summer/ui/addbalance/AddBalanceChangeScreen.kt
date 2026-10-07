@@ -3,6 +3,8 @@ package com.storytellerf.summer.ui.addbalance
 import android.app.Activity
 import android.content.Intent
 import android.net.Uri
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -90,6 +92,7 @@ fun AddBalanceChangeScreen(
     LaunchedEffect(viewModel, lifecycleOwner) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             viewModel.effects.collect { effect ->
+                withContext(Dispatchers.Main) {
                 when (effect) {
                     AddBalanceChangeEffect.Saved -> currentOnBack()
                     is AddBalanceChangeEffect.RequestAuthorization -> {
@@ -102,6 +105,7 @@ fun AddBalanceChangeScreen(
                                 ),
                         )
                     }
+                }
                 }
             }
         }

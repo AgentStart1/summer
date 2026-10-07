@@ -1,7 +1,7 @@
 package com.storytellerf.summer.ui.addbalance
 
 import com.storytellerf.summer.data.db.entity.FundSource
-import com.storytellerf.summer.data.recognition.BalanceImageAnalyzer
+import com.storytellerf.summer.data.recognition.FinanceImageAnalyzer
 import com.storytellerf.summer.data.llmd.LlmdAuthorizationException
 import com.storytellerf.summer.data.llmd.LlmdTarget
 import com.storytellerf.summer.testing.FakeDataRepository
@@ -14,6 +14,8 @@ import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -25,11 +27,34 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class AddBalanceChangeHostTest {
     @Test
+    fun recognizedBalance_savesItsRetainedImagePath() = runTest {
+        val env = createHostTestEnvironment()
+        val source = FundSource(id = 1, name = "Wallet")
+        val repo = FakeDataRepository(fundSources = listOf(source))
+        val analyzer = object : FinanceImageAnalyzer {
+            override suspend fun extractBalanceFromImage(imageReference: String, target: LlmdTarget) = Result.success(12.5)
+            override suspend fun extractBalanceWithImage(imageReference: String, target: LlmdTarget) =
+                Result.success(com.storytellerf.summer.data.recognition.RecognizedBalance(12.5, "recognition-images/balance.jpg"))
+        }
+        val host = AddBalanceChangeHost(repo, analyzer, env.scope, env.dispatchers)
+        try {
+            host.selectFundSource(source)
+            host.extractBalanceFromImage("image")
+            advanceUntilIdle()
+            val saved = async { host.effects.first() }
+            host.saveBalanceChange()
+            advanceUntilIdle()
+            assertEquals(AddBalanceChangeEffect.Saved, saved.await())
+            assertEquals("recognition-images/balance.jpg", repo.insertedBalanceChanges.single().imagePath)
+        } finally { host.close(); env.close() }
+    }
+
+    @Test
     fun saveImmediatelyAfterImport_doesNotSaveThePreviousBalance() = runTest {
         val environment = createHostTestEnvironment()
         val source = FundSource(id = 1, name = "Wallet")
         val repository = FakeDataRepository(fundSources = listOf(source))
-        val analyzer = object : BalanceImageAnalyzer {
+        val analyzer = object : FinanceImageAnalyzer {
             override suspend fun extractBalanceFromImage(imageReference: String, target: LlmdTarget): Result<Double> =
                 awaitCancellation()
         }
@@ -137,7 +162,7 @@ class AddBalanceChangeHostTest {
 private class FakeImageAnalyzer(
     private val expectedDispatcher: CoroutineDispatcher,
     private val result: Result<Double>,
-) : BalanceImageAnalyzer {
+) : FinanceImageAnalyzer {
     var lastImageReference: String? = null
     var lastTarget: LlmdTarget? = null
     var closed = false

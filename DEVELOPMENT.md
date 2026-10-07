@@ -68,9 +68,9 @@ the temporary key file and screenshot in `finally`, including on failure.
 ## Recognition architecture
 
 `ConfiguredImageAnalyzer` snapshots recognition settings per request and dispatches to the
-LLMD adapter or `KoogBalanceRecognizer`. The existing LLMD target flow still determines
+LLMD adapter or `KoogImageRecognizer`. The existing LLMD target flow still determines
 which installed package receives IPC and authorization requests. Both paths share
-`BalanceImageEncoder`, which bounds image decoding, resizes to 1600 pixels, and limits JPEG
+`RecognitionImageEncoder`, which bounds image decoding, resizes to 1600 pixels, and limits JPEG
 payloads to 500 KB. Koog uses an explicit Ktor OkHttp transport on Android; clients and
 transport are closed after each request, and cancellation propagates.
 
@@ -79,3 +79,124 @@ It coordinates on the injected serial dispatcher and performs persistence on IO.
 The balance-entry Host also coordinates state on that dispatcher while recognition runs on IO.
 API keys are AES-GCM encrypted with an Android Keystore key. Preferences live in
 `noBackupFilesDir`, and API request/response bodies and credentials are never application logs.
+
+## Transaction import and timeline paging
+
+`ImportTransactionsHost` owns recognition, LLMD authorization retry, editable preview,
+selection and batch persistence on the serial coordination dispatcher. Image recognition
+and database work run on IO; parsing and preview preparation run on worker dispatchers.
+Both LLMD (strict JSON schema) and Koog support transaction arrays with local ISO dates,
+signed CNY amounts, notes and nullable original transaction IDs. The parser accepts a bare
+JSON object or one enclosing JSON code fence from a model; surrounding prose and malformed
+payloads are rejected. Missing/relative dates stay null in recognition and must be completed
+in the preview before saving. Missing IDs stay null;
+they are never synthesized from dates or amounts. Both balance and transaction recognition save the exact compressed JPEG through
+`FileRecognitionImageStore` under `filesDir/recognition-images`. Content-addressed filenames
+reuse identical images; atomic temporary-file renames prevent partial image files. Entity
+`imagePath` fields store paths relative to `filesDir` (resolve with `File(context.filesDir, path)`),
+so they survive app-data relocation and do not depend on picker URI grants or cache lifetime.
+Manual balance entries and existing records have null image paths; a successful recognition
+keeps its image even when the preview is later cancelled. LLMD's temporary shared image is
+still revoked and deleted after IPC completes; the retained image stays private.
+
+Room version 2 migrates version 1 without deleting balances or generating transactions.
+Room generates the SQL through `@Database(autoMigrations = [AutoMigration(from = 1, to = 2)])`;
+the builder registers that migration automatically. Schema export is enabled and KSP writes
+versioned JSON to `app/schemas/com.storytellerf.summer.data.db.SummerDatabase/`.
+Commit generated schemas with entity changes. Version 1 was exported from the unchanged
+baseline database/entities in an isolated checkout; preserve that historical schema.
+Version 2 is generated from this PR's current entities. Rebuild with `:app:kspDebugKotlin`
+after schema changes; edit entities and annotations rather than the generated JSON or SQL.
+All schema changes within this PR share version 2. If a development install used an earlier
+schema from the same PR, clear app data before testing the latest APK rather than adding
+another database version. This resets local data and recognition settings:
+
+```sh
+adb -s emulator-5554 shell pm clear com.storytellerf.summer
+```
+
+`BalanceImpactRecord` is an independent entity with a fund-source foreign key and unique
+indices for `(fundSourceId, transactionId)` and `(fundSourceId, imageDedupKey)`.
+Only rows without a complete original ID receive an image deduplication key built from
+`imageHash:imageRow`; identified transactions are deduplicated by ID even if recognition
+changes their position in the list. Masked or truncated IDs stay null.
+A SHA-256 digest of the encoded screenshot supports repeat-image detection. Batch inserts
+use a transaction and ignore duplicates; deleting an account cascades to its transactions.
+
+Each `BalanceChange.coveredOrderAmount` persists the signed order total for that account in
+`(preceding snapshot timestamp, current snapshot timestamp]`. Snapshot ordering breaks equal
+timestamps by ID: later same-time snapshots have empty intervals. The first snapshot has no
+interval and zero coverage; orders outside snapshot intervals remain visible independently.
+Migration 1→2 initializes coverage to zero because version 1 has no imported orders.
+Imports and snapshot insert/update/delete recompute
+the affected accounts in the same Room transaction, including the old account when a snapshot
+moves. Callers must write through `DataRepository` to preserve this invariant.
+The order `(fundSourceId, timestamp)` index bounds interval aggregation. Coverage is a net
+amount, not a count or absolute sum, and is not capped at the observed balance change.
+The timeline subtracts persisted coverage from the change in adjacent actual account balances
+(falling back to `previousBalance` for an initial legacy record). Differences round to CNY
+cents and disappear at zero; an excess of expenses can produce a positive difference.
+
+`FeedPagingSource` loads 20 balance changes ordered by `(timestamp DESC, id DESC)` per page.
+The repository reads that window, one preceding balance per account via an indexed latest-row query, the fund sources and
+transactions within a single Room transaction. Transaction intervals are lower-inclusive
+and upper-exclusive; the first and last windows also include transactions beyond the newest
+and oldest snapshots. With no balance changes, the source pages transaction rows directly.
+One interval can contain any number of transaction rows, so Paging keys count balance
+changes rather than flattened rows (or transaction offsets when there are no snapshots). Pages flatten into `TimelineItem.Snapshot` and
+`TimelineItem.Transaction`, plus `TimelineItem.Difference` for uncovered amounts, with distinct
+stable keys. Coverage uses account snapshot intervals independently of paging's global time
+windows, so it remains correct when orders and snapshots appear on different pages.
+Changes to any timeline table replace
+the paging generation, and the Host caches it for the ViewModel lifetime.
+
+Unit tests cover provider requests, parsing, preview/selection, authorization, cancellation
+and paging. `TransactionDatabaseTest` covers Room migration, cross-image ID deduplication,
+account deletion, interval boundaries and historical account balance seeds on a device.
+
+## Public transaction screenshot regression
+
+Keep downloaded screenshots and manually checked expected JSON outside the repository.
+`TransactionScreenshotImportTest` is skipped by the standard suite unless the runner supplies
+an image and expected rows. For example, the [Alipay official help page](https://cschannel.alipay.com/mobile/helpDetail.htm?help_id=201602058759)
+contains a [transaction detail screenshot](https://tfsimg.alipay.com/images/cspropmng/TB1Qx0_X7RDDuNkUvNm760SypXa)
+showing `-20.70`, `2018-11-05 10:59` and a masked ID. Its expected JSON is:
+
+```json
+{"transactions":[{"timestamp":"2018-11-05T10:59:00","amount":-20.70,"note":"饿了么","transactionId":null}]}
+```
+
+The [Alipay list screenshot](https://tfsimg.alipay.com/images/cspropmng/TB1lwuCXJC2aKRkUvMH761PkFXa)
+uses relative dates without an absolute reference, and the
+[Sylq demo transaction list](https://wiki.sylq.io/img/merchant/ListTransactions.png) uses euros.
+The Alipay list should retain five signed transactions with `timestamp:null`; the test
+verifies that persistence is blocked until the preview dates are filled. The synthetic date
+entered by the test exercises manual correction and is not a claimed date from the screenshot.
+The Sylq euro list uses `{"transactions":[]}` to expect rejection under the CNY contract.
+Masked identifiers are never usable deduplication IDs.
+
+With a booted emulator, run:
+
+```sh
+python3 scripts/test-transactions.py --serial emulator-5554 \
+  --image /tmp/alipay-detail.png --expected-json /tmp/alipay-detail.expected.json
+```
+
+The runner builds APKs, installs them when needed, transfers the external
+fixture through stdin into app-private no-backup files, runs the screenshot test and removes fixtures.
+Use `--skip-build` when the APKs have already been built.
+The default mock API response is the manually checked expected JSON: this verifies the
+production encoder, Koog image request, editable preview, confirmation, duplicate handling,
+Room persistence and the retained image bytes. It does **not** validate model recognition accuracy.
+
+Add `--live` with `OPENROUTER_API_KEY` configured in the test process environment to test
+actual recognition against the same expectations. `--key-env` selects another secret variable
+name; `--model` selects an eligible free vision model, verified against the current catalog.
+Keys go through stdin into a temporary app-private no-backup file and are removed in `finally`.
+
+Production coroutine core/Android and coroutine test artifacts share the catalog version.
+Keep them aligned: instrumentation executes against the app APK's coroutine runtime,
+so a newer test artifact alone can cause missing-method failures before tests start.
+
+Screen effect handlers dispatch navigation, authorization launch and notifications to the
+Android main dispatcher; Host coordination continues on the injected serial worker dispatcher.

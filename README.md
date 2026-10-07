@@ -1,10 +1,29 @@
 # Summer
 
-An Android app for recording fund-source balance snapshots. Image import can use an installed LLMD app or an image-capable API model through Koog.
+An Android app for recording fund-source balance snapshots and importing real transactions from screenshots. Image import can use an installed LLMD app or an image-capable API model through Koog.
 
-The home timeline reconstructs every saved asset snapshot: each card shows the total at that
-moment and the balance of every tracked fund source. The record between cards shows the note and
-amount that changed the next snapshot, such as a purchase or income.
+The home timeline loads balance snapshots and imported transactions as you scroll. Each
+snapshot shows the total assets and account balances at that moment. Transactions retain
+their recognized amounts. Orders between two balance records for the same account explain
+that balance change; any remaining amount appears as a **Balance difference**.
+For example, a balance drop of 100 with orders totaling −70 shows those orders and a −30
+difference. Fully explained changes have no difference row. Later imports update the
+remaining difference automatically.
+
+Tap **Import Transactions** in the home toolbar, choose an account and a transaction screenshot,
+then review or edit each row's date, signed CNY amount, description and original transaction ID.
+Uncheck rows you do not want and tap **Import selected transactions**. Screenshot recognition
+uses the same provider settings as balance recognition. Use screenshots with clear income/expense direction.
+Incomplete or relative dates are left blank for you to fill before importing; ambiguous
+amounts, pending transactions and non-CNY rows are skipped.
+
+Visible transaction/order/reference IDs are used to avoid importing the same transaction twice
+for an account, including from different screenshots. When an ID is not visible, the preview
+says so: only repeated imports of the same screenshot rows can be detected. Cropped or overlapping
+screenshots without IDs may contain duplicates; uncheck them before importing. Dates are interpreted
+in the device's local time zone. Successfully recognized screenshots are saved as compressed JPEGs
+in the app's private storage and linked to the saved balance or transaction records.
+Transactions from the same screenshot share one image file. Importing transactions does not change recorded balance snapshots.
 
 Open **Settings → Image recognition** to choose **LLMD**, **OpenAI**, **Anthropic (Claude)**,
 **OpenRouter**, or an **OpenAI-compatible** API provider. LLMD is selected by default.
@@ -17,7 +36,7 @@ This version supports API keys; account/subscription login is not included.
 Each provider keeps its own saved connection. API keys are encrypted on the device and excluded
 from backups. **Remove saved connection** erases a provider's connection and returns to LLMD if
 that provider was active. Imported images are uploaded to the selected remote provider when
-an API connection is active. Review the recognized amount before saving the balance.
+an API connection is active. Review recognized amounts and transaction identifiers before saving.
 
 OpenRouter's `qwen/qwen3.8-27b:free` is a starting model for testing. Availability, image
 support, free quotas, and account permissions can change; check the provider's current catalog.

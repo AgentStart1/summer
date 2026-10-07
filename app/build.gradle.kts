@@ -1,3 +1,8 @@
+import org.gradle.api.tasks.InputDirectory
+import org.gradle.api.tasks.PathSensitive
+import org.gradle.api.tasks.PathSensitivity
+import org.gradle.process.CommandLineArgumentProvider
+
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.compose.compiler)
@@ -94,6 +99,18 @@ kotlin {
     jvmToolchain(17)
 }
 
+class RoomSchemaArgumentProvider(
+    @get:InputDirectory
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    val schemaDir: File,
+) : CommandLineArgumentProvider {
+    override fun asArguments() = listOf("room.schemaLocation=${schemaDir.path}")
+}
+
+ksp {
+    arg(RoomSchemaArgumentProvider(file("schemas")))
+}
+
 dependencies {
   val composeBom = platform(libs.androidx.compose.bom)
   implementation(composeBom)
@@ -104,6 +121,9 @@ dependencies {
   implementation(libs.koog.openrouter)
   implementation(libs.koog.http.ktor)
   implementation(libs.ktor.client.okhttp)
+
+  implementation(libs.kotlinx.coroutines.core)
+  implementation(libs.kotlinx.coroutines.android)
 
   // Core Android dependencies
   implementation(libs.androidx.core.ktx)
@@ -137,11 +157,16 @@ dependencies {
   androidTestImplementation(libs.androidx.test.runner)
   androidTestImplementation(libs.androidx.test.espresso.core)
   androidTestImplementation(libs.ktor.client.mock)
+  androidTestImplementation(libs.kotlinx.coroutines.test)
 
   // Navigation
   implementation(libs.androidx.navigation3.ui)
   implementation(libs.androidx.navigation3.runtime)
   implementation(libs.androidx.lifecycle.viewmodel.navigation3)
+
+  implementation(libs.androidx.paging.common)
+  implementation(libs.androidx.paging.compose)
+  testImplementation(libs.androidx.paging.testing)
 
   // Room
   implementation(libs.androidx.room.runtime)

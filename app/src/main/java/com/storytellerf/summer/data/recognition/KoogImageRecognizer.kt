@@ -21,14 +21,22 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import kotlinx.coroutines.CancellationException
 
-fun interface RemoteBalanceRecognizer {
+fun interface RemoteImageRecognizer {
     suspend fun recognize(backend: RecognitionBackend, connection: KoogConnection, jpeg: ByteArray): Double
+    suspend fun recognizeTransactions(backend: RecognitionBackend, connection: KoogConnection, jpeg: ByteArray): List<RecognizedTransaction> =
+        throw UnsupportedOperationException("Transaction recognition is unavailable")
 }
 
-class KoogBalanceRecognizer(
+class KoogImageRecognizer(
     private val transportFactory: () -> HttpClient = { HttpClient(OkHttp) },
-) : RemoteBalanceRecognizer {
-    override suspend fun recognize(backend: RecognitionBackend, connection: KoogConnection, jpeg: ByteArray): Double {
+) : RemoteImageRecognizer {
+    override suspend fun recognize(backend: RecognitionBackend, connection: KoogConnection, jpeg: ByteArray): Double =
+        parseRemoteBalance(execute(backend, connection, jpeg, REMOTE_BALANCE_PROMPT, 1024))
+
+    override suspend fun recognizeTransactions(backend: RecognitionBackend, connection: KoogConnection, jpeg: ByteArray): List<RecognizedTransaction> =
+        parseTransactions(execute(backend, connection, jpeg, TRANSACTION_EXTRACTION_PROMPT, 8192))
+
+    private suspend fun execute(backend: RecognitionBackend, connection: KoogConnection, jpeg: ByteArray, instruction: String, maxTokens: Int): String {
         val validated = connection.validated()
         require(backend != RecognitionBackend.Llmd) { "Select an API provider" }
         val model = LLModel(
@@ -80,15 +88,15 @@ class KoogBalanceRecognizer(
             }
             try {
                 val response = client.execute(
-                    prompt("balance-extraction", params = LLMParams(maxTokens = 1024)) {
+                    prompt("image-extraction", params = LLMParams(maxTokens = maxTokens)) {
                         user {
-                            text(REMOTE_BALANCE_PROMPT)
+                            text(instruction)
                             image(AttachmentSource.Image(AttachmentContent.Binary.Bytes(jpeg), "jpeg", "image/jpeg"))
                         }
                     },
                     model,
                 )
-                return parseRemoteBalance(response.textContent())
+                return response.textContent()
             } finally {
                 client.close()
             }

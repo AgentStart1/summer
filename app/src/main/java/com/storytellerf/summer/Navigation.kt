@@ -7,6 +7,7 @@ import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.ui.NavDisplay
 import com.storytellerf.summer.ui.addbalance.AddBalanceChangeScreen
 import com.storytellerf.summer.ui.feed.FeedScreen
+import com.storytellerf.summer.ui.importtransactions.ImportTransactionsScreen
 import com.storytellerf.summer.ui.fundsources.FundSourcesScreen
 
 @Composable
@@ -19,6 +20,7 @@ fun MainNavigation() {
         entryProvider = entryProvider {
             entry<Main> {
                 FeedScreen(
+                    onImportTransactions = { backStack.add(ImportTransactions) },
                     onAddBalanceChange = { backStack.add(AddBalanceChange) },
                     onManageFundSources = { backStack.add(FundSources) },
                     modifier = Modifier,
@@ -29,6 +31,9 @@ fun MainNavigation() {
                     onBack = { backStack.removeLastOrNull() },
                     modifier = Modifier,
                 )
+            }
+            entry<ImportTransactions> {
+                ImportTransactionsScreen(onBack = { backStack.removeLastOrNull() })
             }
             entry<AddBalanceChange> {
                 AddBalanceChangeScreen(

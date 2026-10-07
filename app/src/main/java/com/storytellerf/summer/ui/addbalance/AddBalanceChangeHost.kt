@@ -3,7 +3,7 @@ package com.storytellerf.summer.ui.addbalance
 import com.storytellerf.summer.data.DataRepository
 import com.storytellerf.summer.data.db.entity.BalanceChange
 import com.storytellerf.summer.data.db.entity.FundSource
-import com.storytellerf.summer.data.recognition.BalanceImageAnalyzer
+import com.storytellerf.summer.data.recognition.FinanceImageAnalyzer
 import com.storytellerf.summer.data.llmd.LlmdAuthorizationException
 import com.storytellerf.summer.data.llmd.LlmdTarget
 import com.storytellerf.summer.ui.host.AppDispatchers
@@ -37,7 +37,7 @@ import kotlinx.coroutines.launch
 
 class AddBalanceChangeHost(
     private val repository: DataRepository,
-    private val imageAnalyzer: BalanceImageAnalyzer,
+    private val imageAnalyzer: FinanceImageAnalyzer,
     private val scope: CoroutineScope,
     private val dispatchers: AppDispatchers,
     private val imageAnalysisTarget: Flow<LlmdTarget> = flowOf(LlmdTarget.Release),
@@ -89,17 +89,18 @@ class AddBalanceChangeHost(
 
     private fun analyzeImage(imageReference: String) {
         imageAnalysisJob?.cancel()
-        formState.update { it.copy(isImageAnalyzing = true, errorMessage = null) }
+        formState.update { it.copy(isImageAnalyzing = true, errorMessage = null, imagePath = null) }
         imageAnalysisJob = hostScope.launch {
 
             try {
                 val target = withContext(dispatchers.io) { imageAnalysisTarget.first() }
-                val result = withContext(dispatchers.io) { imageAnalyzer.extractBalanceFromImage(imageReference, target) }
-                result.onSuccess { balance ->
+                val result = withContext(dispatchers.io) { imageAnalyzer.extractBalanceWithImage(imageReference, target) }
+                result.onSuccess { recognized ->
                     pendingImageReference.value = null
                     formState.update {
                         it.copy(
-                            balance = formatBalanceForInput(balance),
+                            balance = formatBalanceForInput(recognized.balance),
+                            imagePath = recognized.imagePath,
                             isImageAnalyzing = false,
                         )
                     }
@@ -168,6 +169,7 @@ class AddBalanceChangeHost(
                         newBalance = balance,
                         previousBalance = currentBalance,
                         note = state.note.ifBlank { null },
+                        imagePath = state.imagePath,
                     )
                 )
             }
@@ -204,6 +206,7 @@ data class AddBalanceChangeUiState(
     val isImageAnalyzing: Boolean = false,
     val isSaving: Boolean = false,
     val errorMessage: String? = null,
+    val imagePath: String? = null,
 )
 
 internal fun formatBalanceForInput(balance: Double): String =

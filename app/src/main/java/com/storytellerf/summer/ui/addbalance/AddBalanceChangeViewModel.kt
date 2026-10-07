@@ -5,7 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.storytellerf.summer.data.DataRepository
 import com.storytellerf.summer.data.db.entity.FundSource
-import com.storytellerf.summer.data.recognition.BalanceImageAnalyzer
+import com.storytellerf.summer.data.recognition.FinanceImageAnalyzer
 import com.storytellerf.summer.data.llmd.LlmdTarget
 import com.storytellerf.summer.ui.host.AppDispatchers
 import kotlinx.coroutines.flow.Flow
@@ -15,7 +15,7 @@ import kotlinx.coroutines.flow.flowOf
 
 class AddBalanceChangeViewModel(
     repository: DataRepository,
-    private val imageAnalyzer: BalanceImageAnalyzer,
+    private val imageAnalyzer: FinanceImageAnalyzer,
     imageAnalysisTarget: Flow<LlmdTarget> = flowOf(LlmdTarget.Release),
     dispatchers: AppDispatchers = AppDispatchers.Runtime,
 ) : ViewModel() {
@@ -60,7 +60,7 @@ class AddBalanceChangeViewModel(
 
     class Factory(
         private val repository: DataRepository,
-        private val imageAnalyzer: BalanceImageAnalyzer,
+        private val imageAnalyzer: FinanceImageAnalyzer,
         private val imageAnalysisTarget: Flow<LlmdTarget> = flowOf(LlmdTarget.Release),
         private val dispatchers: AppDispatchers = AppDispatchers.Runtime,
     ) : ViewModelProvider.Factory {

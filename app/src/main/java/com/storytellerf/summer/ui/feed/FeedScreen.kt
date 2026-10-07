@@ -15,7 +15,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.paging.LoadState
+import androidx.paging.compose.LazyPagingItems
+import androidx.paging.compose.collectAsLazyPagingItems
+import androidx.paging.compose.itemKey
+import androidx.compose.material3.TextButton
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
@@ -39,12 +43,14 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.flowWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -55,6 +61,7 @@ import java.util.Locale
 fun FeedScreen(
     onAddBalanceChange: () -> Unit,
     onManageFundSources: () -> Unit,
+    onImportTransactions: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: FeedViewModel = viewModel(
         factory = FeedViewModel.Factory(
@@ -64,7 +71,9 @@ fun FeedScreen(
         )
     ),
 ) {
-    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val flow = remember(viewModel, lifecycle) { viewModel.items.flowWithLifecycle(lifecycle, Lifecycle.State.STARTED) }
+    val items = flow.collectAsLazyPagingItems()
 
     Scaffold(
         modifier = modifier,
@@ -81,6 +90,9 @@ fun FeedScreen(
                     }
                 },
                 actions = {
+                    FilledTonalIconButton(onClick = onImportTransactions) {
+                        Icon(Icons.AutoMirrored.Filled.ReceiptLong, contentDescription = "Import Transactions")
+                    }
                     FilledIconButton(onClick = onAddBalanceChange) {
                         Icon(Icons.Default.Add, contentDescription = "Add Balance Change")
                     }
@@ -91,34 +103,24 @@ fun FeedScreen(
             )
         },
     ) { paddingValues ->
-        when (val s = state) {
-            FeedUiState.Loading -> {
-                Box(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
-                    CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
-                }
-            }
-            is FeedUiState.Success -> {
-                FeedContent(
-                    snapshots = s.snapshots,
-                    modifier = Modifier.padding(paddingValues),
-                )
-            }
-            is FeedUiState.Error -> {
-                Text(
-                    text = "Error: ${s.message}",
-                    modifier = Modifier.padding(paddingValues),
-                )
-            }
-        }
+        FeedContent(items, Modifier.padding(paddingValues))
     }
 }
 
 @Composable
 private fun FeedContent(
-    snapshots: List<BalanceSnapshot>,
+    items: LazyPagingItems<TimelineItem>,
     modifier: Modifier = Modifier,
 ) {
-    if (snapshots.isEmpty()) {
+    if (items.itemCount == 0 && items.loadState.refresh is LoadState.Loading) {
+        Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+        return
+    }
+    if (items.itemCount == 0 && items.loadState.refresh is LoadState.Error) {
+        PageError(onRetry = items::retry, modifier = modifier)
+        return
+    }
+    if (items.itemCount == 0) {
         Box(
             modifier = modifier.fillMaxSize().padding(horizontal = 32.dp),
             contentAlignment = Alignment.Center,
@@ -139,10 +141,10 @@ private fun FeedContent(
                     }
                 }
                 Spacer(modifier = Modifier.height(20.dp))
-                Text("Start your first snapshot", style = MaterialTheme.typography.titleLarge)
+                Text("Start your timeline", style = MaterialTheme.typography.titleLarge)
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "No balance changes yet.\nTap + to add one.",
+                    text = "Tap + to record a balance or import transactions from a screenshot.",
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -156,15 +158,33 @@ private fun FeedContent(
         contentPadding = PaddingValues(start = 20.dp, top = 12.dp, end = 20.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(0.dp),
     ) {
-        itemsIndexed(snapshots, key = { _, snapshot -> snapshot.id }) { index, snapshot ->
-            BalanceSnapshotCard(
-                snapshot = snapshot,
-                isLatest = index == 0,
-            )
-            if (index < snapshots.lastIndex) {
-                BalanceImpactConnector(record = snapshot.record)
+        items(count = items.itemCount, key = items.itemKey { it.key }) { index ->
+            when (val item = items[index]) {
+                is TimelineItem.Snapshot -> BalanceSnapshotCard(item.snapshot, item.isLatest)
+                is TimelineItem.Transaction -> BalanceImpactConnector(
+                    item.record.amount, item.fundSourceName, item.record.timestamp,
+                    item.record.note ?: "Transaction",
+                )
+                is TimelineItem.Difference -> BalanceImpactConnector(
+                    item.amount, item.fundSourceName, item.timestamp, "Balance difference",
+                )
+                null -> Unit
             }
         }
+        if (items.loadState.append is LoadState.Loading || items.loadState.prepend is LoadState.Loading) {
+            item { Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
+        }
+        if (items.loadState.append is LoadState.Error || items.loadState.prepend is LoadState.Error || items.loadState.refresh is LoadState.Error) {
+            item { PageError(onRetry = items::retry) }
+        }
+    }
+}
+
+@Composable
+private fun PageError(onRetry: () -> Unit, modifier: Modifier = Modifier) {
+    Column(modifier.padding(20.dp)) {
+        Text("Could not load the timeline.")
+        TextButton(onClick = onRetry) { Text("Retry") }
     }
 }
 
@@ -282,20 +302,18 @@ private fun FundBalanceRow(
 
 @Composable
 private fun BalanceImpactConnector(
-    record: BalanceImpactRecord,
+    amount: Double,
+    fundSourceName: String,
+    timestamp: Long,
+    title: String,
     modifier: Modifier = Modifier,
 ) {
-    val isIncrease = record.amount > 0
-    val isDecrease = record.amount < 0
+    val isIncrease = amount > 0
+    val isDecrease = amount < 0
     val amountColor = when {
         isIncrease -> MaterialTheme.colorScheme.primary
         isDecrease -> MaterialTheme.colorScheme.error
         else -> MaterialTheme.colorScheme.onSurfaceVariant
-    }
-    val title = record.note ?: when {
-        isIncrease -> "Balance increased"
-        isDecrease -> "Balance decreased"
-        else -> "Balance updated"
     }
 
     Row(
@@ -355,7 +373,7 @@ private fun BalanceImpactConnector(
                     Text(text = title, style = MaterialTheme.typography.titleSmall)
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = "${record.fundSourceName} · ${formatTime(record.timestamp)}",
+                        text = "$fundSourceName · ${formatDate(timestamp)}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -373,7 +391,7 @@ private fun BalanceImpactConnector(
                 )
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(
-                    text = formatChange(record.amount),
+                    text = formatChange(amount),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                     color = amountColor,
