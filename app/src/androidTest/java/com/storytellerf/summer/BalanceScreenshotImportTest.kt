@@ -3,10 +3,14 @@ package com.storytellerf.summer
 import android.graphics.Bitmap
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performClick
 import androidx.core.net.toUri
 import androidx.lifecycle.ViewModelStore
 import androidx.room.Room
+import com.storytellerf.summer.theme.SummerAppTheme
 import androidx.test.platform.app.InstrumentationRegistry
 import com.storytellerf.summer.data.DefaultDataRepository
 import com.storytellerf.summer.data.db.SummerDatabase
@@ -84,7 +88,7 @@ class BalanceScreenshotImportTest {
             })
             store.put("balance", model)
             val saved = CompletableDeferred<Unit>()
-            compose.setContent { AddBalanceChangeScreen(onBack = { saved.complete(Unit) }, viewModel = model) }
+            compose.setContent { SummerAppTheme { AddBalanceChangeScreen(onBack = { saved.complete(Unit) }, viewModel = model) } }
             compose.runOnIdle {
                 model.toggleImageTarget(a); model.toggleImageTarget(b)
                 model.updateBalanceToRead(a.id, "Available cash")
@@ -92,13 +96,15 @@ class BalanceScreenshotImportTest {
             }
             compose.waitUntil(30_000) { !model.uiState.value.isImageAnalyzing && model.uiState.value.balanceRows.size == 3 }
             assertNull(model.uiState.value.errorMessage)
+            saveDesignScreenshot(compose, "balances-review")
             compose.onNodeWithText("Save selected balances").performClick()
             compose.waitUntil(10_000) { model.uiState.value.errorMessage != null }
             assertTrue(repo.getAllBalanceChanges().first().isEmpty())
-            compose.runOnIdle {
-                val row = model.uiState.value.balanceRows[1]
-                model.updateBalanceRow(row.key, row.copy(fundSourceId = b.id, note = "Assigned savings"))
-            }
+            compose.onNodeWithContentDescription("Edit Unassigned balance 2").performScrollTo().performClick()
+            compose.onNodeWithContentDescription("Assign Bank").performClick()
+            saveDesignScreenshot(compose, "balance-details")
+            compose.onNodeWithText("Note (Optional)").performScrollTo().performTextInput("Assigned savings")
+            compose.onNodeWithText("Done").performScrollTo().performClick()
             compose.waitUntil(10_000) { model.uiState.value.balanceRows[1].fundSourceId == b.id }
             compose.onNodeWithText("Save selected balances").performClick()
             compose.waitUntil(10_000) { saved.isCompleted }

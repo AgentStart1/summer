@@ -16,6 +16,7 @@ import com.storytellerf.summer.data.db.SummerDatabase
 import com.storytellerf.summer.data.db.entity.FundSource
 import com.storytellerf.summer.data.llmd.LlmdTarget
 import com.storytellerf.summer.data.recognition.*
+import com.storytellerf.summer.ui.components.formatSignedMoney
 import com.storytellerf.summer.ui.importtransactions.ImportTransactionsScreen
 import com.storytellerf.summer.ui.importtransactions.ImportTransactionsViewModel
 import io.ktor.client.HttpClient
@@ -101,7 +102,7 @@ class TransactionScreenshotImportTest {
             }
             assertNull(viewModel.uiState.value.error)
             assertEquals(expected.size, viewModel.uiState.value.rows.size)
-            compose.onNodeWithText(expected.first().amount.toString()).performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText(formatSignedMoney(expected.first().amount)).performScrollTo().assertIsDisplayed()
             if (expected.any { it.timestamp == null }) {
                 // Unknown screenshot dates must block persistence until the user supplies verified dates.
                 compose.onNodeWithText("Import selected transactions").performClick()

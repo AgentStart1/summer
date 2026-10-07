@@ -35,8 +35,9 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledIconButton
-import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.Button
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -44,10 +45,15 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import kotlinx.coroutines.Dispatchers
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import com.storytellerf.summer.ui.components.formatMoney
+import com.storytellerf.summer.ui.components.formatSignedMoney
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -75,34 +81,35 @@ fun FeedScreen(
 ) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val flow = remember(viewModel, lifecycle) { viewModel.items.flowWithLifecycle(lifecycle, Lifecycle.State.STARTED) }
-    val items = flow.collectAsLazyPagingItems()
+    val items = flow.collectAsLazyPagingItems(context = Dispatchers.Main.immediate)
 
     Scaffold(
         modifier = modifier,
         topBar = {
             TopAppBar(
-                title = {
-                    Column {
-                        Text("Summer Finance", style = MaterialTheme.typography.titleLarge)
-                        Text(
-                            "Your money, clearly.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                },
+                title = { Text("Summer Finance", style = MaterialTheme.typography.titleMedium, maxLines = 1) },
                 actions = {
-                    FilledTonalIconButton(onClick = onImportTransactions) {
-                        Icon(Icons.AutoMirrored.Filled.ReceiptLong, contentDescription = "Import Transactions")
+                    TextButton(onClick = onImportTransactions) {
+                        Icon(Icons.AutoMirrored.Filled.ReceiptLong, contentDescription = "Import Transactions", modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Import orders")
                     }
-                    FilledIconButton(onClick = onAddBalanceChange) {
-                        Icon(Icons.Default.Add, contentDescription = "Add Balance Change")
-                    }
-                    FilledTonalIconButton(onClick = onManageFundSources) {
+                    IconButton(onClick = onManageFundSources) {
                         Icon(Icons.Default.Settings, contentDescription = "Settings")
                     }
                 },
             )
+        },
+        bottomBar = {
+            Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp) {
+                Box(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 12.dp)) {
+                    Button(onClick = onAddBalanceChange, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                        Icon(Icons.Default.Add, contentDescription = "Add Balance Change")
+                        Spacer(Modifier.width(8.dp))
+                        Text("Record balance")
+                    }
+                }
+            }
         },
     ) { paddingValues ->
         FeedContent(items, Modifier.padding(paddingValues))
@@ -146,7 +153,7 @@ private fun FeedContent(
                 Text("Start your timeline", style = MaterialTheme.typography.titleLarge)
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Tap + to record a balance or import transactions from a screenshot.",
+                    text = "Record a balance or import orders to start your timeline.",
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -169,10 +176,10 @@ private fun FeedContent(
                 is TimelineItem.Snapshot -> BalanceSnapshotCard(item.snapshot, item.isLatest)
                 is TimelineItem.Transaction -> BalanceImpactConnector(
                     item.record.amount, item.fundSourceName, item.record.timestamp,
-                    item.record.note ?: "Transaction",
+                    item.record.note ?: "Transaction", isDifference = false,
                 )
                 is TimelineItem.Difference -> BalanceImpactConnector(
-                    item.amount, item.fundSourceName, item.timestamp, "Balance difference",
+                    item.amount, item.fundSourceName, item.timestamp, "Balance difference", isDifference = true,
                 )
                 null -> Unit
             }
@@ -210,13 +217,13 @@ private fun BalanceSnapshotCard(
             },
         ),
     ) {
-        Column(modifier = Modifier.fillMaxWidth().padding(20.dp)) {
+        Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                     Icon(
                         Icons.Default.Schedule,
                         contentDescription = null,
@@ -225,8 +232,8 @@ private fun BalanceSnapshotCard(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = if (snapshot.startTimestamp == snapshot.timestamp) formatDate(snapshot.timestamp)
-                            else "${formatDate(snapshot.startTimestamp)} – ${formatDate(snapshot.timestamp)}",
+                        text = formatRange(snapshot.startTimestamp, snapshot.timestamp),
+                        maxLines = 2, overflow = TextOverflow.Ellipsis,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -241,22 +248,23 @@ private fun BalanceSnapshotCard(
                             text = "Latest",
                             style = MaterialTheme.typography.labelSmall,
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                            maxLines = 1, softWrap = false,
                         )
                     }
                 }
             }
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(10.dp))
             Text(
-                text = "Total assets",
+                text = if (isLatest) "Total assets" else "Balance checkpoint",
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
-                formatBalance(snapshot.totalBalance),
-                style = MaterialTheme.typography.headlineMedium,
+                formatMoney(snapshot.totalBalance),
+                style = if (isLatest) MaterialTheme.typography.headlineMedium else MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
             )
-            HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
+            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
             snapshot.fundBalances.forEachIndexed { index, fund ->
                 FundBalanceRow(fundBalance = fund)
                 if (index < snapshot.fundBalances.lastIndex) {
@@ -300,7 +308,7 @@ private fun FundBalanceRow(
             modifier = Modifier.weight(1f),
         )
         Text(
-            text = formatBalance(fundBalance.balance),
+            text = formatMoney(fundBalance.balance),
             style = MaterialTheme.typography.bodyLarge,
             fontWeight = FontWeight.SemiBold,
         )
@@ -313,6 +321,7 @@ private fun BalanceImpactConnector(
     fundSourceName: String,
     timestamp: Long,
     title: String,
+    isDifference: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val isIncrease = amount > 0
@@ -340,7 +349,9 @@ private fun BalanceImpactConnector(
             Surface(
                 modifier = Modifier.size(32.dp),
                 shape = CircleShape,
-                color = if (isDecrease) {
+                color = if (isDifference) {
+                    MaterialTheme.colorScheme.tertiaryContainer
+                } else if (isDecrease) {
                     MaterialTheme.colorScheme.errorContainer
                 } else {
                     MaterialTheme.colorScheme.secondaryContainer
@@ -348,14 +359,16 @@ private fun BalanceImpactConnector(
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
-                        imageVector = if (isDecrease) {
+                        imageVector = if (isDifference) {
+                            Icons.AutoMirrored.Outlined.HelpOutline
+                        } else if (isDecrease) {
                             Icons.Default.ArrowDownward
                         } else {
                             Icons.Default.ArrowUpward
                         },
                         contentDescription = null,
                         modifier = Modifier.size(18.dp),
-                        tint = amountColor,
+                        tint = if (isDifference) MaterialTheme.colorScheme.onTertiaryContainer else amountColor,
                     )
                 }
             }
@@ -378,6 +391,8 @@ private fun BalanceImpactConnector(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(text = title, style = MaterialTheme.typography.titleSmall)
+                    if (isDifference) Text("Not covered by orders", style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = "$fundSourceName · ${formatDate(timestamp)}",
@@ -398,7 +413,7 @@ private fun BalanceImpactConnector(
                 )
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(
-                    text = formatChange(amount),
+                    text = formatSignedMoney(amount),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                     color = amountColor,
@@ -406,20 +421,6 @@ private fun BalanceImpactConnector(
             }
         }
     }
-}
-
-private fun formatBalance(balance: Double): String {
-    val absoluteValue = "%,.2f".format(Locale.US, kotlin.math.abs(balance))
-    return if (balance < 0) "-¥$absoluteValue" else "¥$absoluteValue"
-}
-
-private fun formatChange(change: Double): String {
-    val sign = when {
-        change > 0 -> "+"
-        change < 0 -> "−"
-        else -> ""
-    }
-    return "$sign¥${"%,.2f".format(Locale.US, kotlin.math.abs(change))}"
 }
 
 private fun formatDate(timestamp: Long): String {
@@ -430,4 +431,12 @@ private fun formatDate(timestamp: Long): String {
 private fun formatTime(timestamp: Long): String {
     val sdf = SimpleDateFormat("HH:mm", Locale.getDefault())
     return sdf.format(Date(timestamp))
+}
+
+private fun formatRange(start: Long, end: Long): String {
+    if (start == end) return formatDate(end)
+    val day = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+    return if (day.format(Date(start)) == day.format(Date(end)))
+        "${day.format(Date(end))} · ${formatTime(start)}–${formatTime(end)}"
+    else "${formatDate(start)} – ${formatDate(end)}"
 }

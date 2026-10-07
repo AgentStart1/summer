@@ -33,11 +33,12 @@ fun MainNavigation() {
                 )
             }
             entry<ImportTransactions> {
-                ImportTransactionsScreen(onBack = { backStack.removeLastOrNull() })
+                ImportTransactionsScreen(onBack = { backStack.removeLastOrNull() }, onManageAccounts = { backStack.add(FundSources) })
             }
             entry<AddBalanceChange> {
                 AddBalanceChangeScreen(
                     onBack = { backStack.removeLastOrNull() },
+                    onManageAccounts = { backStack.add(FundSources) },
                     modifier = Modifier,
                 )
             }

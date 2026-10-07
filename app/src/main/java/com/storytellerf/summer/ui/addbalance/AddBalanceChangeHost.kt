@@ -80,8 +80,19 @@ class AddBalanceChangeHost(
         )
 
     fun selectFundSource(fundSource: FundSource) = hostScope.launch {
-        formState.update { it.copy(selectedFundSource = fundSource, errorMessage = null,
-            imageTargets = it.imageTargets.ifEmpty { listOf(BalanceReadTarget(fundSource.id, fundSource.name, "Account balance")) }) }
+        if (!formState.value.isSaving && !formState.value.isImageAnalyzing) {
+            formState.update { it.copy(selectedFundSource = fundSource, errorMessage = null) }
+        }
+    }
+
+    fun selectEntryMode(mode: BalanceEntryMode) = hostScope.launch {
+        if (formState.value.isSaving || formState.value.isImageAnalyzing || formState.value.entryMode == mode) return@launch
+        pendingBatch = null
+        pendingImageReference.value = null
+        formState.update { state -> state.copy(entryMode = mode, balanceRows = emptyList(), errorMessage = null,
+            imageTargets = state.imageTargets.ifEmpty {
+                state.selectedFundSource?.let { listOf(BalanceReadTarget(it.id, it.name, "Account balance")) }.orEmpty()
+            }) }
     }
 
     fun toggleImageTarget(source: FundSource) = hostScope.launch {
@@ -119,7 +130,7 @@ class AddBalanceChangeHost(
         }
         pendingImageReference.value = null
         pendingBatch = PendingBalanceBatch(images.toList(), targets, fallbackTimestamp = now())
-        formState.update { it.copy(balanceRows = emptyList(), errorMessage = null) }
+        formState.update { it.copy(entryMode = BalanceEntryMode.Screenshots, balanceRows = emptyList(), errorMessage = null) }
         analyzeBatch()
     }
 
@@ -269,6 +280,10 @@ class AddBalanceChangeHost(
             saveBalanceBatch(state)
             return@launch
         }
+        if (state.entryMode == BalanceEntryMode.Screenshots) {
+            formState.update { it.copy(errorMessage = "Choose images and review the recognized balances before saving") }
+            return@launch
+        }
         val fundSource = state.selectedFundSource
         if (fundSource == null) {
             formState.update { it.copy(errorMessage = "Select a fund source") }
@@ -357,7 +372,10 @@ sealed interface AddBalanceChangeEffect {
     data class RequestAuthorization(val target: LlmdTarget) : AddBalanceChangeEffect
 }
 
+enum class BalanceEntryMode { Manual, Screenshots }
+
 data class AddBalanceChangeUiState(
+    val entryMode: BalanceEntryMode = BalanceEntryMode.Manual,
     val fundSources: List<FundSource> = emptyList(),
     val selectedFundSource: FundSource? = null,
     val balance: String = "",

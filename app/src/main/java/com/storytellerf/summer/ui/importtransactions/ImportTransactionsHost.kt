@@ -49,7 +49,13 @@ class ImportTransactionsHost(
     }.stateIn(hostScope, SharingStarted.WhileSubscribed(5_000), ImportTransactionsUiState())
 
     fun selectFundSource(source: FundSource) = hostScope.launch {
-        if (!form.value.isSaving && !form.value.isAnalyzing) form.update { it.copy(fundSourceId = source.id, error = null) }
+        if (!form.value.isSaving && !form.value.isAnalyzing && form.value.rows.isEmpty()) form.update { it.copy(fundSourceId = source.id, error = null) }
+    }
+
+    fun clearPreview() = hostScope.launch {
+        if (form.value.isSaving || form.value.isAnalyzing) return@launch
+        pendingImage = null
+        form.update { it.copy(rows = emptyList(), imageHash = null, imagePath = null, error = null) }
     }
 
     fun updateRow(index: Int, row: TransactionDraft) = hostScope.launch {

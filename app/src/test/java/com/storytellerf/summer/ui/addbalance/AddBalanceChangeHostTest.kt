@@ -31,6 +31,27 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class AddBalanceChangeHostTest {
+    @Test fun screenshotModeCannotSaveAStaleManualDraft_andSwitchingBackPreservesManualInput() = runTest {
+        val env = createHostTestEnvironment()
+        val source = FundSource(id = 1, name = "Wallet")
+        val repo = FakeDataRepository(fundSources = listOf(source))
+        val host = AddBalanceChangeHost(repo, FakeImageAnalyzer(env.ioDispatcher, Result.success(90.0)), env.scope, env.dispatchers)
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { host.uiState.collect() }
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { host.effects.collect() }
+        try {
+            host.selectFundSource(source); host.updateBalance("25")
+            host.selectEntryMode(BalanceEntryMode.Screenshots); advanceUntilIdle()
+            assertEquals(BalanceEntryMode.Screenshots, host.uiState.value.entryMode)
+            assertEquals(listOf(source.id), host.uiState.value.imageTargets.map { it.fundSourceId })
+            host.saveBalanceChange(); advanceUntilIdle()
+            assertTrue(repo.insertedBalanceChanges.isEmpty())
+            host.selectEntryMode(BalanceEntryMode.Manual); advanceUntilIdle()
+            assertEquals("25", host.uiState.value.balance)
+            host.saveBalanceChange(); advanceUntilIdle()
+            assertEquals(25.0, repo.insertedBalanceChanges.single().newBalance, 0.0)
+        } finally { host.close(); env.close() }
+    }
+
     @Test fun multiImagePreviewRequiresTargetsAndAssignment_preservesEachImageTimeAndPath() = runTest {
         val env = createHostTestEnvironment()
         val wallet = FundSource(id = 1, name = "Wallet")

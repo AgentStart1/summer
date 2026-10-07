@@ -49,6 +49,7 @@ class AddBalanceChangeViewModel(
     }
 
     fun toggleImageTarget(source: FundSource) { host.toggleImageTarget(source) }
+    fun selectEntryMode(mode: BalanceEntryMode) { host.selectEntryMode(mode) }
     fun updateBalanceToRead(sourceId: Long, label: String) { host.updateBalanceToRead(sourceId, label) }
     fun extractBalancesFromImages(images: List<String>) { host.extractBalancesFromImages(images) }
     fun updateBalanceRow(key: String, row: BalanceDraft) { host.updateBalanceRow(key, row) }

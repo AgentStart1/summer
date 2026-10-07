@@ -22,6 +22,7 @@ class ImportTransactionsViewModel(
     fun recognize(image: String) { host.recognize(image) }
     fun onAuthorizationResult(authorized: Boolean) { host.onAuthorizationResult(authorized) }
     fun save() { host.save() }
+    fun clearPreview() { host.clearPreview() }
     override fun onCleared() { host.close(); super.onCleared() }
 
     class Factory(private val repository: DataRepository, private val analyzer: FinanceImageAnalyzer, private val target: Flow<LlmdTarget>) : ViewModelProvider.Factory {

@@ -80,6 +80,31 @@ The balance-entry Host also coordinates state on that dispatcher while recogniti
 API keys are AES-GCM encrypted with an Android Keystore key. Preferences live in
 `noBackupFilesDir`, and API request/response bodies and credentials are never application logs.
 
+## Entry and review UI
+
+The timeline uses one primary **Record balance** action and a labeled **Import orders** action.
+The newest balance node shows the current asset total; older checkpoints and individual
+orders form the history. Uncovered differences use a distinct marker and explanatory label.
+Balance entry has explicit Manual/Screenshots modes owned by `AddBalanceChangeHost`. Manual
+drafts survive a mode switch, but screenshot mode cannot persist a stale manual draft.
+
+Both screenshot imports use choose/review steps, compact selectable rows, bulk selection and
+bottom-sheet detail editors from `ui/components`. Row edits update the Host draft; dismissing
+the detail sheet does not save to the database. Saving validates and persists the selected
+records. Account reassignment for a balance is limited to its preselected targets. An order
+preview keeps its account fixed until the user confirms discarding that preview. Discarding
+clears the pending recognition reference and draft image metadata without deleting saved data.
+
+Settings separates Accounts from Image recognition. Only LLMD shows its build selector;
+API providers show their own connection fields. Production UI uses the existing Material 3
+theme. Compose state/Paging collectors explicitly use `Dispatchers.Main.immediate`; Host
+coordination and recognition/database work retain their background dispatchers.
+`ImportReviewJourneyTest` exercises date correction, details, deselection and persistence;
+`BalanceScreenshotImportTest` exercises ambiguous account assignment through the detail editor.
+Pass `-e design_screenshots true` to these device tests to save synthetic journey screenshots
+under the debug app's `cache/design-screenshots/` for visual review. No user screenshots or
+credentials are captured by that helper.
+
 ## Transaction import and timeline paging
 
 Balance entry owns an editable local date/time in its Host and persists it as

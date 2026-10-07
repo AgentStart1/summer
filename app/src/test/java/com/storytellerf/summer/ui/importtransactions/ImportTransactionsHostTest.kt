@@ -27,6 +27,28 @@ class ImportTransactionsHostTest {
         RecognizedTransaction(1_790_000_001_000, 25.0, "Income", "TX-002"),
     ), imagePath = "recognition-images/image-a.jpg")
 
+    @Test fun changingTheAccountRequiresDiscardingThePreview_andDiscardKeepsSavedOrdersUntouched() = runTest {
+        val env = createHostTestEnvironment()
+        val other = FundSource(id = 2, name = "Bank")
+        val repo = FakeDataRepository(fundSources = listOf(source, other))
+        val host = ImportTransactionsHost(repo, analyzer { Result.success(recognition) }, env.scope, env.dispatchers)
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { host.uiState.collect() }
+        try {
+            host.selectFundSource(source); host.recognize("image"); advanceUntilIdle()
+            host.selectFundSource(other); advanceUntilIdle()
+            assertEquals(source.id, host.uiState.value.fundSourceId)
+            assertEquals(2, host.uiState.value.rows.size)
+            host.clearPreview(); host.selectFundSource(other); advanceUntilIdle()
+            assertEquals(other.id, host.uiState.value.fundSourceId)
+            assertTrue(host.uiState.value.rows.isEmpty())
+            assertNull(host.uiState.value.imageHash)
+            assertNull(host.uiState.value.imagePath)
+            assertTrue(repo.importedTransactions.value.isEmpty())
+            host.save(); advanceUntilIdle()
+            assertTrue(repo.importedTransactions.value.isEmpty())
+        } finally { host.close(); env.close() }
+    }
+
     @Test fun previewIsRequired_editsAndSelectionAreSaved_onceDespiteRapidTaps() = runTest {
         val env = createHostTestEnvironment()
         val repo = FakeDataRepository(fundSources = listOf(source), expectedIoDispatcher = env.ioDispatcher)
