@@ -82,6 +82,15 @@ API keys are AES-GCM encrypted with an Android Keystore key. Preferences live in
 
 ## Transaction import and timeline paging
 
+Balance entry owns an editable local date/time in its Host and persists it as
+`BalanceChange.timestamp`. An injected clock initializes the form, and an injected
+`ImageCreationTimeReader` reads original URI metadata on IO before recognition/re-encoding.
+Android prefers MediaStore DATE_TAKEN (including media URI mappings) and EXIF original or
+digitized dates, with offset/subsecond support. Added-to-library and modification dates are
+not assumed to be creation dates; absent metadata uses current time. Manual edits made while
+metadata is pending, and edits before authorization retries, are preserved. Backdated saves
+use the account's preceding balance at that time rather than the latest balance.
+
 `ImportTransactionsHost` owns recognition, LLMD authorization retry, editable preview,
 selection and batch persistence on the serial coordination dispatcher. Image recognition
 and database work run on IO; parsing and preview preparation run on worker dispatchers.

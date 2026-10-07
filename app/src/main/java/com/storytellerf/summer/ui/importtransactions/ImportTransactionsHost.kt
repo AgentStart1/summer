@@ -6,8 +6,8 @@ import com.storytellerf.summer.data.db.entity.FundSource
 import com.storytellerf.summer.data.llmd.LlmdAuthorizationException
 import com.storytellerf.summer.data.llmd.LlmdTarget
 import com.storytellerf.summer.data.recognition.FinanceImageAnalyzer
-import com.storytellerf.summer.data.recognition.formatTransactionDate
-import com.storytellerf.summer.data.recognition.parseTransactionDate
+import com.storytellerf.summer.data.recognition.formatLocalDateTime
+import com.storytellerf.summer.data.recognition.parseLocalDateTime
 import com.storytellerf.summer.ui.host.AppDispatchers
 import java.util.TimeZone
 import kotlinx.coroutines.CancellationException
@@ -83,7 +83,7 @@ class ImportTransactionsHost(
                     val rows = withContext(dispatchers.default) {
                         recognized.records.mapIndexed { index, record -> TransactionDraft(
                             imageRow = index,
-                            date = record.timestamp?.let { formatTransactionDate(it, timeZone) }.orEmpty(),
+                            date = record.timestamp?.let { formatLocalDateTime(it, timeZone) }.orEmpty(),
                             amount = record.amount.toString(),
                             note = record.note.orEmpty(),
                             transactionId = record.transactionId.orEmpty(),
@@ -125,7 +125,7 @@ class ImportTransactionsHost(
         form.update { it.copy(isSaving = true, error = null) }
         val records = withContext(dispatchers.default) {
             selected.map { row ->
-                val timestamp = parseTransactionDate(row.date, timeZone)
+                val timestamp = parseLocalDateTime(row.date, timeZone)
                 val amount = row.amount.trim().toDoubleOrNull()?.takeIf(Double::isFinite)
                 if (timestamp == null || amount == null) null else BalanceImpactRecord(
                     fundSourceId = sourceId, timestamp = timestamp, amount = amount,

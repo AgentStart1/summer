@@ -21,7 +21,7 @@ class TransactionRecognitionTest {
             {"timestamp":"2026-10-06T00:00:00","amount":200.0,"note":null,"transactionId":null}]}""", TimeZone.getTimeZone("Asia/Shanghai"))
         assertEquals(-12.50, values[0].amount, 0.0)
         assertEquals("TX-001", values[0].transactionId)
-        assertEquals("2026-10-06T04:30:00", formatTransactionDate(requireNotNull(values[0].timestamp), TimeZone.getTimeZone("UTC")))
+        assertEquals("2026-10-06T04:30:00", formatLocalDateTime(requireNotNull(values[0].timestamp), TimeZone.getTimeZone("UTC")))
         assertNull(values[1].transactionId)
     }
 
@@ -37,8 +37,8 @@ class TransactionRecognitionTest {
             """{"transactions":[{"timestamp":"10-06","amount":5,"note":null,"transactionId":null}]}""")) {
             assertThrows(InvalidTransactionResponseException::class.java) { parseTransactions(content) }
         }
-        assertNull(parseTransactionDate("2026-10-06T25:00:00"))
-        assertNull(parseTransactionDate("2026-10-06T12:00:00junk"))
+        assertNull(parseLocalDateTime("2026-10-06T25:00:00"))
+        assertNull(parseLocalDateTime("2026-10-06T12:00:00junk"))
         assertEquals(imageHash(byteArrayOf(1, 2)), imageHash(byteArrayOf(1, 2)))
         assertNotEquals(imageHash(byteArrayOf(1, 2)), imageHash(byteArrayOf(1, 3)))
     }

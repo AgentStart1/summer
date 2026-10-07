@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.storytellerf.summer.data.DataRepository
 import com.storytellerf.summer.data.db.entity.FundSource
 import com.storytellerf.summer.data.recognition.FinanceImageAnalyzer
+import com.storytellerf.summer.data.recognition.ImageCreationTimeReader
 import com.storytellerf.summer.data.llmd.LlmdTarget
 import com.storytellerf.summer.ui.host.AppDispatchers
 import kotlinx.coroutines.flow.Flow
@@ -18,6 +19,7 @@ class AddBalanceChangeViewModel(
     private val imageAnalyzer: FinanceImageAnalyzer,
     imageAnalysisTarget: Flow<LlmdTarget> = flowOf(LlmdTarget.Release),
     dispatchers: AppDispatchers = AppDispatchers.Runtime,
+    imageCreationTimeReader: ImageCreationTimeReader = ImageCreationTimeReader { null },
 ) : ViewModel() {
     private val host = AddBalanceChangeHost(
         repository = repository,
@@ -25,6 +27,7 @@ class AddBalanceChangeViewModel(
         scope = viewModelScope,
         dispatchers = dispatchers,
         imageAnalysisTarget = imageAnalysisTarget,
+        imageCreationTimeReader = imageCreationTimeReader,
     )
     val uiState: StateFlow<AddBalanceChangeUiState> = host.uiState
     val effects: SharedFlow<AddBalanceChangeEffect> = host.effects
@@ -39,6 +42,10 @@ class AddBalanceChangeViewModel(
 
     fun updateNote(note: String) {
         host.updateNote(note)
+    }
+
+    fun updateDateTime(dateTime: String) {
+        host.updateDateTime(dateTime)
     }
 
     fun extractBalanceFromImage(imageReference: String) {
@@ -63,6 +70,7 @@ class AddBalanceChangeViewModel(
         private val imageAnalyzer: FinanceImageAnalyzer,
         private val imageAnalysisTarget: Flow<LlmdTarget> = flowOf(LlmdTarget.Release),
         private val dispatchers: AppDispatchers = AppDispatchers.Runtime,
+        private val imageCreationTimeReader: ImageCreationTimeReader = ImageCreationTimeReader { null },
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -72,6 +80,7 @@ class AddBalanceChangeViewModel(
                 imageAnalyzer,
                 imageAnalysisTarget,
                 dispatchers,
+                imageCreationTimeReader,
             ) as T
         }
     }

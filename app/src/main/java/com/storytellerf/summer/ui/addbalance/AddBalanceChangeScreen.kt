@@ -63,6 +63,7 @@ import com.storytellerf.summer.data.DefaultDataRepository
 import com.storytellerf.summer.data.db.SummerDatabase
 import com.storytellerf.summer.data.llmd.LlmdServiceConnection
 import com.storytellerf.summer.data.recognition.configuredImageAnalyzer
+import com.storytellerf.summer.data.recognition.AndroidImageCreationTimeReader
 import com.storytellerf.summer.data.llmd.DataStoreLlmdTargetSettings
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -75,6 +76,7 @@ fun AddBalanceChangeScreen(
             DefaultDataRepository(SummerDatabase.getInstance(LocalContext.current.applicationContext)),
             configuredImageAnalyzer(LocalContext.current.applicationContext),
             DataStoreLlmdTargetSettings(LocalContext.current.applicationContext).selectedTarget,
+            imageCreationTimeReader = AndroidImageCreationTimeReader(LocalContext.current.applicationContext),
         )
     ),
 ) {
@@ -209,7 +211,7 @@ fun AddBalanceChangeScreen(
                 OutlinedButton(
                     onClick = { imagePickerLauncher.launch("image/*") },
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = !state.isImageAnalyzing,
+                    enabled = !state.isImageAnalyzing && !state.isSaving,
                 ) {
                     if (state.isImageAnalyzing) {
                         CircularProgressIndicator(
@@ -230,6 +232,15 @@ fun AddBalanceChangeScreen(
                 icon = { Icon(Icons.AutoMirrored.Filled.Notes, contentDescription = null) },
                 title = "Details",
             ) {
+                OutlinedTextField(
+                    value = state.dateTime,
+                    onValueChange = viewModel::updateDateTime,
+                    label = { Text("Local date and time") },
+                    supportingText = { Text("yyyy-MM-ddTHH:mm:ss · Check the time before saving.") },
+                    enabled = !state.isSaving,
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
                 OutlinedTextField(
                     value = state.note,
                     onValueChange = { viewModel.updateNote(it) },

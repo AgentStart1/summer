@@ -1,9 +1,6 @@
 package com.storytellerf.summer.data.recognition
 
 import java.security.MessageDigest
-import java.text.ParsePosition
-import java.text.SimpleDateFormat
-import java.util.Locale
 import java.util.TimeZone
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -24,7 +21,7 @@ internal fun parseTransactions(content: String, timeZone: TimeZone = TimeZone.ge
         val values = Json.decodeFromString<TransactionPayload>(json).transactions
         require(values.size in 1..100)
         values.map { value ->
-            val timestamp = value.timestamp?.let { requireNotNull(parseTransactionDate(it, timeZone)) }
+            val timestamp = value.timestamp?.let { requireNotNull(parseLocalDateTime(it, timeZone)) }
             require(value.amount.isFinite())
             RecognizedTransaction(timestamp, value.amount, value.note?.trim()?.takeIf(String::isNotEmpty), value.transactionId?.trim()?.takeIf(String::isNotEmpty))
         }
@@ -32,20 +29,6 @@ internal fun parseTransactions(content: String, timeZone: TimeZone = TimeZone.ge
         throw InvalidTransactionResponseException()
     }
 }
-
-fun parseTransactionDate(text: String, timeZone: TimeZone = TimeZone.getDefault()): Long? {
-    if (!Regex("\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}").matches(text)) return null
-    val parser = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.ROOT).apply {
-        isLenient = false
-        this.timeZone = timeZone
-    }
-    val position = ParsePosition(0)
-    return parser.parse(text, position)?.time?.takeIf { position.index == text.length && it > 0 }
-}
-
-fun formatTransactionDate(timestamp: Long, timeZone: TimeZone = TimeZone.getDefault()): String =
-    SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.ROOT).apply { this.timeZone = timeZone }
-        .format(java.util.Date(timestamp))
 
 internal fun imageHash(jpeg: ByteArray): String = MessageDigest.getInstance("SHA-256")
     .digest(jpeg).joinToString("") { "%02x".format(it.toInt() and 0xff) }

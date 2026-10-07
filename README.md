@@ -25,6 +25,11 @@ in the device's local time zone. Successfully recognized screenshots are saved a
 in the app's private storage and linked to the saved balance or transaction records.
 Transactions from the same screenshot share one image file. Importing transactions does not change recorded balance snapshots.
 
+When adding a balance, edit **Local date and time** before saving. It defaults to the current
+time. Selecting an image uses its original capture/creation metadata when available;
+images without readable creation metadata default to the current time. Check or correct
+the time for historical screenshots before saving.
+
 Open **Settings → Image recognition** to choose **LLMD**, **OpenAI**, **Anthropic (Claude)**,
 **OpenRouter**, or an **OpenAI-compatible** API provider. LLMD is selected by default.
 

@@ -4,6 +4,9 @@ import com.storytellerf.summer.data.DataRepository
 import com.storytellerf.summer.data.db.entity.BalanceChange
 import com.storytellerf.summer.data.db.entity.FundSource
 import com.storytellerf.summer.data.recognition.FinanceImageAnalyzer
+import com.storytellerf.summer.data.recognition.ImageCreationTimeReader
+import com.storytellerf.summer.data.recognition.formatLocalDateTime
+import com.storytellerf.summer.data.recognition.parseLocalDateTime
 import com.storytellerf.summer.data.llmd.LlmdAuthorizationException
 import com.storytellerf.summer.data.llmd.LlmdTarget
 import com.storytellerf.summer.ui.host.AppDispatchers
@@ -41,9 +44,12 @@ class AddBalanceChangeHost(
     private val scope: CoroutineScope,
     private val dispatchers: AppDispatchers,
     private val imageAnalysisTarget: Flow<LlmdTarget> = flowOf(LlmdTarget.Release),
+    private val imageCreationTimeReader: ImageCreationTimeReader = ImageCreationTimeReader { null },
+    private val now: () -> Long = System::currentTimeMillis,
 ) : AutoCloseable {
     private val hostScope = CoroutineScope(scope.coroutineContext + SupervisorJob(scope.coroutineContext[Job]) + dispatchers.coordination)
-    private val formState = MutableStateFlow(AddBalanceChangeUiState())
+    private val formState = MutableStateFlow(freshForm())
+    private var dateTimeRevision = 0L
     private val pendingImageReference = MutableStateFlow<String?>(null)
     private val mutableEffects = MutableSharedFlow<AddBalanceChangeEffect>()
     private var imageAnalysisJob: Job? = null
@@ -67,7 +73,7 @@ class AddBalanceChangeHost(
         .stateIn(
             scope = hostScope.withDispatcher(dispatchers.default),
             started = SharingStarted.WhileSubscribed(5_000),
-            initialValue = AddBalanceChangeUiState(),
+            initialValue = formState.value,
         )
 
     fun selectFundSource(fundSource: FundSource) = hostScope.launch {
@@ -82,17 +88,30 @@ class AddBalanceChangeHost(
         formState.update { it.copy(note = note) }
     }
 
-    fun extractBalanceFromImage(imageReference: String) = hostScope.launch {
-        pendingImageReference.value = imageReference
-        analyzeImage(imageReference)
+    fun updateDateTime(dateTime: String) = hostScope.launch {
+        dateTimeRevision++
+        formState.update { it.copy(dateTime = dateTime, timestamp = parseLocalDateTime(dateTime.trim()), errorMessage = null) }
     }
 
-    private fun analyzeImage(imageReference: String) {
+    fun extractBalanceFromImage(imageReference: String) = hostScope.launch {
+        pendingImageReference.value = imageReference
+        dateTimeRevision++
+        analyzeImage(imageReference, readImageTime = true)
+    }
+
+    private fun analyzeImage(imageReference: String, readImageTime: Boolean = false) {
         imageAnalysisJob?.cancel()
         formState.update { it.copy(isImageAnalyzing = true, errorMessage = null, imagePath = null) }
+        val revision = dateTimeRevision
         imageAnalysisJob = hostScope.launch {
-
             try {
+                if (readImageTime) {
+                    val creationTime = withContext(dispatchers.io) { imageCreationTimeReader.readCreationTime(imageReference) }
+                    if (revision == dateTimeRevision) {
+                        val timestamp = creationTime?.takeIf { it > 0 } ?: now()
+                        formState.update { it.copy(dateTime = formatLocalDateTime(timestamp), timestamp = timestamp) }
+                    }
+                }
                 val target = withContext(dispatchers.io) { imageAnalysisTarget.first() }
                 val result = withContext(dispatchers.io) { imageAnalyzer.extractBalanceWithImage(imageReference, target) }
                 result.onSuccess { recognized ->
@@ -154,13 +173,18 @@ class AddBalanceChangeHost(
             return@launch
         }
         if (state.isSaving || state.isImageAnalyzing) return@launch
+        val timestamp = state.timestamp
+        if (timestamp == null || timestamp <= 0) {
+            formState.update { it.copy(errorMessage = "Enter a valid local date and time (yyyy-MM-ddTHH:mm:ss)") }
+            return@launch
+        }
 
         formState.update { it.copy(isSaving = true, errorMessage = null) }
         try {
             withContext(dispatchers.io) {
                 val currentBalance = repository.getBalanceChangesByFundSource(fundSource.id)
                     .firstOrNull()
-                    ?.firstOrNull()
+                    ?.firstOrNull { it.timestamp <= timestamp }
                     ?.newBalance
 
                 repository.insertBalanceChange(
@@ -170,11 +194,12 @@ class AddBalanceChangeHost(
                         previousBalance = currentBalance,
                         note = state.note.ifBlank { null },
                         imagePath = state.imagePath,
+                        timestamp = timestamp,
                     )
                 )
             }
             pendingImageReference.value = null
-            formState.value = AddBalanceChangeUiState()
+            formState.value = freshForm()
             mutableEffects.emit(AddBalanceChangeEffect.Saved)
         } catch (error: CancellationException) {
             throw error
@@ -190,6 +215,11 @@ class AddBalanceChangeHost(
     override fun close() {
         hostScope.cancel()
         imageAnalyzer.close()
+    }
+
+    private fun freshForm(): AddBalanceChangeUiState {
+        val timestamp = now()
+        return AddBalanceChangeUiState(dateTime = formatLocalDateTime(timestamp), timestamp = timestamp)
     }
 }
 
@@ -207,6 +237,8 @@ data class AddBalanceChangeUiState(
     val isSaving: Boolean = false,
     val errorMessage: String? = null,
     val imagePath: String? = null,
+    val dateTime: String = "",
+    val timestamp: Long? = null,
 )
 
 internal fun formatBalanceForInput(balance: Double): String =

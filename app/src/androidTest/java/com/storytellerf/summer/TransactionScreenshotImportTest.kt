@@ -119,8 +119,8 @@ class TransactionScreenshotImportTest {
             val records = database.balanceImpactRecordDao().getInRange(null, null)
             assertEquals(expected.size, records.size)
             val actual = records.sortedWith(compareBy({ it.timestamp }, { it.amount }))
-            expected.sortedWith(compareBy({ it.timestamp ?: parseTransactionDate("2020-01-02T03:04:05") }, { it.amount })).zip(actual).forEach { (truth, record) ->
-                assertEquals(truth.timestamp ?: parseTransactionDate("2020-01-02T03:04:05"), record.timestamp)
+            expected.sortedWith(compareBy({ it.timestamp ?: parseLocalDateTime("2020-01-02T03:04:05") }, { it.amount })).zip(actual).forEach { (truth, record) ->
+                assertEquals(truth.timestamp ?: parseLocalDateTime("2020-01-02T03:04:05"), record.timestamp)
                 assertEquals(truth.amount, record.amount, 0.005)
                 assertEquals(truth.transactionId, record.transactionId)
             }

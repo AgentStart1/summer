@@ -11,9 +11,11 @@ import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTextClearance
 import androidx.test.platform.app.InstrumentationRegistry
 import com.storytellerf.summer.data.db.SummerDatabase
 import com.storytellerf.summer.data.DefaultDataRepository
+import com.storytellerf.summer.data.recognition.parseLocalDateTime
 import com.storytellerf.summer.data.db.entity.BalanceImpactRecord
 import com.storytellerf.summer.data.db.entity.BalanceChange
 import com.storytellerf.summer.data.db.entity.FundSource
@@ -29,6 +31,25 @@ import org.junit.Rule
 import org.junit.Test
 
 class FinanceJourneyTest {
+    @Test fun balanceEntryAllowsEditingTheTime_andPersistsTheChosenTime() = runTest {
+        val repository = DefaultDataRepository(database)
+        withContext(Dispatchers.IO) { repository.insertFundSource(FundSource(name = "Historical Wallet")) }
+        composeTestRule.onNodeWithContentDescription("Add Balance Change").performClick()
+        composeTestRule.waitUntil(10_000) {
+            composeTestRule.onAllNodesWithText("Historical Wallet").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeTestRule.onNodeWithText("Historical Wallet").performClick()
+        composeTestRule.onNodeWithText("New Balance").performTextInput("90.00")
+        composeTestRule.onNodeWithText("Local date and time").performScrollTo().performTextClearance()
+        composeTestRule.onNodeWithText("Local date and time").performTextInput("2020-01-02T03:04:05")
+        composeTestRule.onNodeWithText("Save Balance Change").performClick()
+        composeTestRule.waitUntil(10_000) {
+            composeTestRule.onAllNodesWithText("Summer Finance").fetchSemanticsNodes().isNotEmpty()
+        }
+        val record = withContext(Dispatchers.IO) { repository.getAllBalanceChanges().first().single() }
+        assertEquals(parseLocalDateTime("2020-01-02T03:04:05"), record.timestamp)
+    }
+
     @get:Rule val composeTestRule = createAndroidComposeRule<MainActivity>()
 
     private val database by lazy {
