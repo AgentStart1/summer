@@ -68,4 +68,7 @@ For LLMD, choose the installed package in **LLMD build**:
 The choice is saved on device. Debug builds default to LLMD Debug; non-debug builds default to
 LLMD Release until a different package is selected.
 
+Debug, alpha and release builds can be installed together. Each keeps its own balances,
+transactions, saved images and recognition settings.
+
 See [DEVELOPMENT.md](DEVELOPMENT.md) for build instructions and the optional OpenRouter vision test.

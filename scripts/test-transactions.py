@@ -11,7 +11,7 @@ import subprocess
 import time
 
 PROJECT = Path(__file__).resolve().parents[1]
-APP = 'com.storytellerf.summer'
+APP = 'com.storytellerf.summer.debug'
 
 
 def run(command, **kwargs):
@@ -62,7 +62,7 @@ def main():
             run(adb + ['shell', 'run-as', APP, 'sh', '-c', f"'mkdir -p no_backup && cat > no_backup/{name} && chmod 600 no_backup/{name}'"],
                 input=data, capture_output=True)
         result = run(adb + ['shell', 'am', 'instrument', '-w', '-r', '-e', 'class',
-                    APP + '.TransactionScreenshotImportTest#externalScreenshotThroughEncoderPreviewAndDatabase',
+                    'com.storytellerf.summer.TransactionScreenshotImportTest#externalScreenshotThroughEncoderPreviewAndDatabase',
                     '-e', 'transaction_live', str(options.live).lower(), '-e', 'transaction_model', model,
                     APP + '.test/androidx.test.runner.AndroidJUnitRunner'], capture_output=True, text=True)
         print(result.stdout)

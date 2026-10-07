@@ -110,18 +110,33 @@ still revoked and deleted after IPC completes; the retained image stays private.
 
 Room version 2 migrates version 1 without deleting balances or generating transactions.
 Room generates the SQL through `@Database(autoMigrations = [AutoMigration(from = 1, to = 2)])`;
-the builder registers that migration automatically. Schema export is enabled and KSP writes
-versioned JSON to `app/schemas/com.storytellerf.summer.data.db.SummerDatabase/`.
+the builder registers that migration automatically. The Room Gradle plugin configures KSP
+schema import/export separately for each build type:
+
+| Build type | Application ID | Schema directory |
+| --- | --- | --- |
+| debug | `com.storytellerf.summer.debug` | `app/schemas/debug/com.storytellerf.summer.data.db.SummerDatabase/` |
+| alpha | `com.storytellerf.summer.alpha` | `app/schemas/alpha/com.storytellerf.summer.data.db.SummerDatabase/` |
+| release | `com.storytellerf.summer` | `app/schemas/release/com.storytellerf.summer.data.db.SummerDatabase/` |
+
+These applications can be installed together and have separate databases, recognition
+settings and retained images. The namespace and Kotlin/test class packages remain
+`com.storytellerf.summer`. Debug instrumentation is installed as
+`com.storytellerf.summer.debug.test`; both screenshot runners target the debug app.
+Existing installs under the original application ID retain their data; the new debug app
+starts with its own empty storage. Database version remains 2 for all build types.
+
 Commit generated schemas with entity changes. Version 1 was exported from the unchanged
 baseline database/entities in an isolated checkout; preserve that historical schema.
-Version 2 is generated from this PR's current entities. Rebuild with `:app:kspDebugKotlin`
-after schema changes; edit entities and annotations rather than the generated JSON or SQL.
+Version 2 is generated from this PR's current entities. After schema changes, rebuild
+`:app:kspDebugKotlin :app:kspAlphaKotlin :app:kspReleaseKotlin` so every build type exports
+its current schema. Edit entities and annotations rather than the generated JSON or SQL.
 All schema changes within this PR share version 2. If a development install used an earlier
 schema from the same PR, clear app data before testing the latest APK rather than adding
 another database version. This resets local data and recognition settings:
 
 ```sh
-adb -s emulator-5554 shell pm clear com.storytellerf.summer
+adb -s emulator-5554 shell pm clear com.storytellerf.summer.debug
 ```
 
 `BalanceImpactRecord` is an independent entity with a fund-source foreign key and unique

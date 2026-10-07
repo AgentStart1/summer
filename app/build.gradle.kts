@@ -1,13 +1,9 @@
-import org.gradle.api.tasks.InputDirectory
-import org.gradle.api.tasks.PathSensitive
-import org.gradle.api.tasks.PathSensitivity
-import org.gradle.process.CommandLineArgumentProvider
-
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.compose.compiler)
   alias(libs.plugins.kotlin.serialization)
   alias(libs.plugins.ksp)
+  alias(libs.plugins.room)
   alias(libs.plugins.easylauncher)
 }
 
@@ -51,6 +47,10 @@ android {
     }
 
     buildTypes {
+        debug {
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+        }
         release {
             signingConfigs.findByName("release")?.let { signingConfig = it }
             isMinifyEnabled = false
@@ -99,16 +99,10 @@ kotlin {
     jvmToolchain(17)
 }
 
-class RoomSchemaArgumentProvider(
-    @get:InputDirectory
-    @get:PathSensitive(PathSensitivity.RELATIVE)
-    val schemaDir: File,
-) : CommandLineArgumentProvider {
-    override fun asArguments() = listOf("room.schemaLocation=${schemaDir.path}")
-}
-
-ksp {
-    arg(RoomSchemaArgumentProvider(file("schemas")))
+room {
+    schemaDirectory("debug", "$projectDir/schemas/debug")
+    schemaDirectory("alpha", "$projectDir/schemas/alpha")
+    schemaDirectory("release", "$projectDir/schemas/release")
 }
 
 dependencies {
