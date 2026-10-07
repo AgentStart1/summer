@@ -3,11 +3,13 @@ package com.storytellerf.summer.ui.feed
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -322,17 +324,17 @@ private fun BalanceImpactConnector(
     }
 
     Row(
-        modifier = modifier.fillMaxWidth().heightIn(min = 88.dp),
+        modifier = modifier.fillMaxWidth().height(IntrinsicSize.Min).heightIn(min = 88.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(
-            modifier = Modifier.width(44.dp),
+            modifier = Modifier.width(44.dp).fillMaxHeight(),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Box(
                 modifier = Modifier
                     .width(2.dp)
-                    .height(16.dp)
+                    .weight(1f)
                     .background(MaterialTheme.colorScheme.outlineVariant),
             )
             Surface(
@@ -360,7 +362,7 @@ private fun BalanceImpactConnector(
             Box(
                 modifier = Modifier
                     .width(2.dp)
-                    .height(16.dp)
+                    .weight(1f)
                     .background(MaterialTheme.colorScheme.outlineVariant),
             )
         }
