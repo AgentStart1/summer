@@ -158,6 +158,10 @@ private fun FeedContent(
         contentPadding = PaddingValues(start = 20.dp, top = 12.dp, end = 20.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(0.dp),
     ) {
+        // Stable UI-only start anchor; paged rows retain their own zero-based indexes.
+        item(key = "timeline:top-sentinel", contentType = "timeline:top-sentinel") {
+            Spacer(Modifier.fillMaxWidth().height(0.dp))
+        }
         items(count = items.itemCount, key = items.itemKey { it.key }) { index ->
             when (val item = items[index]) {
                 is TimelineItem.Snapshot -> BalanceSnapshotCard(item.snapshot, item.isLatest)

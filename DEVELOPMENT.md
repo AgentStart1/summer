@@ -153,6 +153,11 @@ dispatcher, and the observer is cancelled with the Host. Refresh uses the previo
 state's anchor rather than starting over at offset zero. PagingData is cached for the
 ViewModel lifetime.
 
+The Compose timeline owns a fixed-key, non-interactive 0dp sentinel before its paged rows.
+It is UI structure and is not added to `TimelineItem`, database records or PagingSource keys.
+The sentinel occupies LazyColumn index 0; the paged `items` block still indexes PagingData
+from zero, so external list-position scrolling must account for the one-row UI prefix.
+
 Unit tests cover provider requests, parsing, preview/selection, authorization, cancellation
 and paging. `TransactionDatabaseTest` covers Room migration, cross-image ID deduplication,
 account deletion, interval boundaries and historical account balance seeds on a device.
