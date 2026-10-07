@@ -110,6 +110,9 @@ class OrderCoverageDatabaseTest {
         try {
             val repo = DefaultDataRepository(db)
             val snapshot = repo.getBalanceChangeById(2)!!
+            assertEquals("CNY", repo.getFundSourceById(1)!!.currency)
+            val euro = repo.insertFundSource(FundSource(name = "Euro", currency = "EUR"))
+            assertEquals("EUR", repo.getFundSourceById(euro)!!.currency)
             assertEquals(900.0, snapshot.newBalance, 0.0)
             assertEquals("Snapshot", snapshot.note)
             assertEquals(0.0, snapshot.coveredOrderAmount, 0.0)

@@ -31,6 +31,32 @@ import org.junit.Rule
 import org.junit.Test
 
 class FinanceJourneyTest {
+    @Test fun accountCurrencyCanBeSelectedAndEdited_andMixedCurrencyTotalsStaySeparate() = runTest {
+        composeTestRule.onNodeWithContentDescription("Settings").performClick()
+        composeTestRule.onNodeWithContentDescription("Add Fund Source").performClick()
+        composeTestRule.onNodeWithText("Fund Source Name").performTextInput("Currency account")
+        composeTestRule.onNodeWithText("USD").performClick()
+        composeTestRule.onNodeWithText("Save").performClick()
+        composeTestRule.waitUntil(10_000) { composeTestRule.onAllNodesWithText("Balance source · USD").fetchSemanticsNodes().isNotEmpty() }
+        composeTestRule.onNodeWithContentDescription("Edit").performClick()
+        composeTestRule.onNodeWithText("EUR").performClick()
+        composeTestRule.onNodeWithText("Save").performClick()
+        composeTestRule.waitUntil(10_000) { composeTestRule.onAllNodesWithText("Balance source · EUR").fetchSemanticsNodes().isNotEmpty() }
+        val repo = DefaultDataRepository(database)
+        withContext(Dispatchers.IO) {
+            val euro = repo.getAllFundSources().first().single()
+            assertEquals("EUR", euro.currency)
+            val dollar = repo.insertFundSource(FundSource(name = "Dollar account", currency = "USD"))
+            repo.insertBalanceChanges(listOf(BalanceChange(fundSourceId = euro.id, newBalance = 100.0, timestamp = 1000),
+                BalanceChange(fundSourceId = dollar, newBalance = 200.0, timestamp = 1000)))
+        }
+        composeTestRule.onNodeWithContentDescription("Back").performClick()
+        composeTestRule.waitUntil(10_000) {
+            composeTestRule.onAllNodesWithText("EUR 100.00\nUSD 200.00").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeTestRule.onNodeWithText("EUR 100.00\nUSD 200.00").assertIsDisplayed()
+    }
+
     @Test fun balanceEntryAllowsEditingTheTime_andPersistsTheChosenTime() = runTest {
         val repository = DefaultDataRepository(database)
         withContext(Dispatchers.IO) { repository.insertFundSource(FundSource(name = "Historical Wallet")) }

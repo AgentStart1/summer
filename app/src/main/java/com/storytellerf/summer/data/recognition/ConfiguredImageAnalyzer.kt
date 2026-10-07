@@ -34,36 +34,15 @@ class ConfiguredImageAnalyzer(
         }
     } catch (error: CancellationException) { throw error }
     catch (error: Exception) { Result.failure(error) }
-    override suspend fun extractBalanceFromImage(imageReference: String, target: LlmdTarget): Result<Double> =
-        extractBalanceWithImage(imageReference, target).map { it.balance }
-
-    override suspend fun extractBalanceWithImage(imageReference: String, target: LlmdTarget): Result<RecognizedBalance> {
+    override suspend fun extractTransactionsFromImage(imageReference: String, target: LlmdTarget, currency: String?): Result<RecognizedTransactions> {
         return try {
             val config = settings.config.first()
             if (config.backend == RecognitionBackend.Llmd) {
-                llmd.extractBalanceWithImage(imageReference, target)
+                llmd.extractTransactionsFromImage(imageReference, target, currency)
             } else {
                 val connection = config.connectionFor().validated()
                 val jpeg = readJpeg(imageReference)
-                val balance = remote.recognize(config.backend, connection, jpeg)
-                Result.success(RecognizedBalance(balance, imageStore.save(jpeg)))
-            }
-        } catch (error: CancellationException) {
-            throw error
-        } catch (error: Exception) {
-            Result.failure(error)
-        }
-    }
-
-    override suspend fun extractTransactionsFromImage(imageReference: String, target: LlmdTarget): Result<RecognizedTransactions> {
-        return try {
-            val config = settings.config.first()
-            if (config.backend == RecognitionBackend.Llmd) {
-                llmd.extractTransactionsFromImage(imageReference, target)
-            } else {
-                val connection = config.connectionFor().validated()
-                val jpeg = readJpeg(imageReference)
-                val records = remote.recognizeTransactions(config.backend, connection, jpeg)
+                val records = remote.recognizeTransactions(config.backend, connection, jpeg, currency)
                 Result.success(RecognizedTransactions(imageHash(jpeg), records, imageStore.save(jpeg)))
             }
         } catch (error: CancellationException) {
@@ -91,11 +70,8 @@ fun configuredImageAnalyzer(
         remote = object : RemoteImageRecognizer {
             override suspend fun recognizeBalances(backend: RecognitionBackend, connection: KoogConnection, jpeg: ByteArray, targets: List<BalanceReadTarget>): List<RecognizedAccountBalance> =
                 loggedRecognition(backend, "balances") { remote.recognizeBalances(backend, connection, jpeg, targets) }
-            override suspend fun recognize(backend: RecognitionBackend, connection: KoogConnection, jpeg: ByteArray): Double =
-                loggedRecognition(backend, "balance") { remote.recognize(backend, connection, jpeg) }
-
-            override suspend fun recognizeTransactions(backend: RecognitionBackend, connection: KoogConnection, jpeg: ByteArray): List<RecognizedTransaction> =
-                loggedRecognition(backend, "transactions") { remote.recognizeTransactions(backend, connection, jpeg) }
+            override suspend fun recognizeTransactions(backend: RecognitionBackend, connection: KoogConnection, jpeg: ByteArray, currency: String?): List<RecognizedTransaction> =
+                loggedRecognition(backend, "transactions") { remote.recognizeTransactions(backend, connection, jpeg, currency) }
         },
     )
 }

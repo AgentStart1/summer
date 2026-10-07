@@ -19,7 +19,7 @@ data class BalanceImpactRecord(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val fundSourceId: Long,
     val timestamp: Long,
-    /** Signed CNY amount: income positive, expense negative. */
+    /** Signed amount in the fund source currency: income positive, expense negative. */
     val amount: Double,
     val note: String?,
     val imageHash: String,

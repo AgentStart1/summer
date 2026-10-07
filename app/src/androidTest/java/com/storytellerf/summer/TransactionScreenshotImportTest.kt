@@ -85,7 +85,6 @@ class TransactionScreenshotImportTest {
             val account = FundSource(id = repository.insertFundSource(FundSource(name = "Fixture Account")), name = "Fixture Account")
             val encoder = RecognitionImageEncoder(context)
             val analyzer = ConfiguredImageAnalyzer(settings, object : FinanceImageAnalyzer {
-                override suspend fun extractBalanceFromImage(imageReference: String, target: LlmdTarget): Result<Double> = error("LLMD is not selected")
             }, { encoder.encode(it.toUri()) }, recognizer, FileRecognitionImageStore(images))
             val viewModel = ImportTransactionsViewModel(repository, analyzer, flowOf(LlmdTarget.Release))
             store.put("import", viewModel)

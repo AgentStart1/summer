@@ -132,7 +132,7 @@ fun ImportTransactionsScreen(
                     row.amount.toDoubleOrNull()?.isFinite() != true -> "Check the amount"
                     else -> null
                 }
-                ReviewItem(title = row.note.ifBlank { "Transaction ${index + 1}" }, amount = row.amount.toDoubleOrNull()?.takeIf(Double::isFinite)?.let(::formatSignedMoney) ?: row.amount,
+                ReviewItem(title = row.note.ifBlank { "Transaction ${index + 1}" }, amount = row.amount.toDoubleOrNull()?.takeIf(Double::isFinite)?.let { formatSignedMoney(it, state.currency ?: "?") } ?: row.amount,
                     subtitle = "${row.date.replace('T', ' ').ifBlank { "Date not recognized" }}\n${if (row.transactionId.isBlank()) "No order ID" else "Order ${row.transactionId}"}",
                     selected = row.selected, editable = editable,
                     onSelected = { viewModel.updateRow(index, row.copy(selected = it)) },
@@ -144,7 +144,7 @@ fun ImportTransactionsScreen(
         ReviewEditor("Transaction details", onDismiss = { focus.clearFocus(); editingRow = null }) {
             OutlinedTextField(value = row.amount, enabled = editable,
                 onValueChange = { viewModel.updateRow(index, row.copy(amount = it)) },
-                label = { Text("Signed amount (CNY)") }, supportingText = { Text("Expenses are negative; income is positive") },
+                label = { Text("Signed amount (${state.currency.orEmpty()})") }, supportingText = { Text("Expenses are negative; income is positive") },
                 singleLine = true, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(value = row.date, enabled = editable,
                 onValueChange = { viewModel.updateRow(index, row.copy(date = it)) },

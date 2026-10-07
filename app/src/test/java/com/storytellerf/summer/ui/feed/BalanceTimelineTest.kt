@@ -8,6 +8,19 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class BalanceTimelineTest {
+    @Test fun mixedCurrencySnapshotHasNoCombinedTotal_andOrdersAndDifferencesKeepCurrency() {
+        val sources = listOf(FundSource(id = 1, name = "Dollar", currency = "USD"), FundSource(id = 2, name = "Euro", currency = "EUR"))
+        val changes = listOf(BalanceChange(id = 1, fundSourceId = 1, newBalance = 100.0, previousBalance = 90.0, timestamp = 10),
+            BalanceChange(id = 2, fundSourceId = 2, newBalance = 200.0, previousBalance = 190.0, timestamp = 20))
+        val order = BalanceImpactRecord(id = 1, fundSourceId = 2, timestamp = 15, amount = -5.0, note = null, imageHash = "image", imageRow = 0)
+        val items = flattenTimeline(TimelinePage(changes, emptyList(), sources, listOf(order), false), true)
+        val snapshot = items.filterIsInstance<TimelineItem.Snapshot>().single().snapshot
+        assertNull(snapshot.totalBalance)
+        assertEquals(setOf("USD", "EUR"), snapshot.fundBalances.map { it.currency }.toSet())
+        assertEquals("EUR", items.filterIsInstance<TimelineItem.Transaction>().single().currency)
+        assertEquals(setOf("USD", "EUR"), items.filterIsInstance<TimelineItem.Difference>().map { it.currency }.toSet())
+    }
+
     @Test fun groupedSnapshotUsesOneUnchangedBalancePerAccount_andOrdersDoNotSplitIt() {
         val changes = listOf(BalanceChange(id = 1, fundSourceId = 1, newBalance = 100.0, previousBalance = 90.0, timestamp = 60_000),
             BalanceChange(id = 2, fundSourceId = 2, newBalance = 200.0, previousBalance = 150.0, timestamp = 120_000),
@@ -15,7 +28,7 @@ class BalanceTimelineTest {
         val record = BalanceImpactRecord(id = 1, fundSourceId = 1, timestamp = 150_000, amount = 20.0, note = null, imageHash = "image", imageRow = 0)
         val items = flattenTimeline(TimelinePage(changes, emptyList(), listOf(FundSource(id = 1, name = "Bank"), FundSource(id = 2, name = "Wallet")), listOf(record), false), true)
         val snapshot = items.filterIsInstance<TimelineItem.Snapshot>().single().snapshot
-        assertEquals(300.0, snapshot.totalBalance, 0.0)
+        assertEquals(300.0, requireNotNull(snapshot.totalBalance), 0.0)
         assertEquals(60_000L, snapshot.startTimestamp)
         assertEquals(180_000L, snapshot.timestamp)
         assertEquals(setOf(1L, 2L, 3L), snapshot.recordIds.toSet())
@@ -60,7 +73,7 @@ class BalanceTimelineTest {
             listOf(BalanceChange(id = 1, fundSourceId = 1, newBalance = 1000.0, timestamp = 10),
                 BalanceChange(id = 2, fundSourceId = 2, newBalance = 200.0, timestamp = 20)),
         )
-        assertEquals(1080.0, snapshots.single().totalBalance, 0.0)
+        assertEquals(1080.0, requireNotNull(snapshots.single().totalBalance), 0.0)
         assertEquals(listOf("Bank", "Wallet"), snapshots.single().fundBalances.map { it.fundSourceName })
     }
 

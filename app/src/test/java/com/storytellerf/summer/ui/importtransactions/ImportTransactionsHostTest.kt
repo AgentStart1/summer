@@ -21,6 +21,22 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ImportTransactionsHostTest {
+    @Test fun llmdServiceFailureShowsSafeDiagnostic_withoutCreatingImportRows() = runTest {
+        val env = createHostTestEnvironment()
+        val host = ImportTransactionsHost(FakeDataRepository(fundSources = listOf(source)), analyzer {
+            Result.failure(com.storytellerf.summer.data.llmd.llmdRecognitionError(
+                "llmd_error", "Invalid response_format schema containing private data"))
+        }, env.scope, env.dispatchers)
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { host.uiState.collect() }
+        try {
+            host.selectFundSource(source); host.recognize("image"); advanceUntilIdle()
+            assertTrue(host.uiState.value.rows.isEmpty())
+            assertTrue(host.uiState.value.error!!.contains("structured recognition"))
+            assertFalse(host.uiState.value.error!!.contains("private data"))
+            assertFalse(host.uiState.value.isAnalyzing)
+        } finally { host.close(); env.close() }
+    }
+
     private val source = FundSource(id = 1, name = "Wallet")
     private val recognition = RecognizedTransactions("image-a", listOf(
         RecognizedTransaction(1_790_000_000_000, -12.5, "Shop", "TX-001"),
@@ -111,14 +127,16 @@ class ImportTransactionsHostTest {
         val cancelled = CompletableDeferred<Unit>()
         var closed = false
         val analyzer = object : FinanceImageAnalyzer {
-            override suspend fun extractBalanceFromImage(imageReference: String, target: LlmdTarget) = Result.success(0.0)
-            override suspend fun extractTransactionsFromImage(imageReference: String, target: LlmdTarget): Result<RecognizedTransactions> {
+            override suspend fun extractTransactionsFromImage(imageReference: String, target: LlmdTarget, currency: String?): Result<RecognizedTransactions> {
+                assertEquals("USD", currency)
                 started.complete(Unit)
                 try { awaitCancellation() } finally { cancelled.complete(Unit) }
             }
             override fun close() { closed = true }
         }
-        val host = ImportTransactionsHost(FakeDataRepository(), analyzer, env.scope, env.dispatchers)
+        val dollar = source.copy(currency = "USD")
+        val host = ImportTransactionsHost(FakeDataRepository(fundSources = listOf(dollar)), analyzer, env.scope, env.dispatchers)
+        host.selectFundSource(dollar)
         host.recognize("image")
         advanceUntilIdle()
         assertTrue(started.isCompleted)
@@ -129,7 +147,6 @@ class ImportTransactionsHostTest {
     }
 
     private fun analyzer(result: suspend () -> Result<RecognizedTransactions>) = object : FinanceImageAnalyzer {
-        override suspend fun extractBalanceFromImage(imageReference: String, target: LlmdTarget) = Result.success(0.0)
-        override suspend fun extractTransactionsFromImage(imageReference: String, target: LlmdTarget) = result()
+        override suspend fun extractTransactionsFromImage(imageReference: String, target: LlmdTarget, currency: String?) = result()
     }
 }

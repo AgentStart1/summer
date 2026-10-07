@@ -11,12 +11,12 @@ difference. Fully explained changes have no difference row. Later imports update
 remaining difference automatically.
 
 Tap **Import orders** in the home toolbar, choose an account, then **Choose Screenshot**.
-Review the compact list and tap a transaction to edit its date, signed CNY amount, description
+Review the compact list and tap a transaction to edit its date, signed amount in the account currency, description
 and original transaction ID.
 Uncheck rows you do not want and tap **Import selected transactions**. Screenshot recognition
 uses the same provider settings as balance recognition. Use screenshots with clear income/expense direction.
 Incomplete or relative dates are left blank for you to fill before importing; ambiguous
-amounts, pending transactions and non-CNY rows are skipped.
+amounts, pending transactions and rows explicitly in a different account currency are skipped.
 
 Visible transaction/order/reference IDs are used to avoid importing the same transaction twice
 for an account, including from different screenshots. When an ID is not visible, the preview
@@ -52,8 +52,9 @@ Open **Settings → Image recognition** to choose **LLMD**, **OpenAI**, **Anthro
 **OpenRouter**, or an **OpenAI-compatible** API provider. LLMD is selected by default.
 
 For an API provider, enter its HTTPS **API base URL** (including the version path, such as
-`https://openrouter.ai/api/v1`), an image-capable **model ID**, and your **API key**, then tap
+`https://openrouter.ai/api/v1`), a **model ID** supporting images and JSON Schema, and your **API key**, then tap
 **Save recognition settings**. OpenAI connections can use Responses API or Chat Completions.
+All recognition requests require native JSON Schema output; unsupported models fail without a plain-text fallback.
 This version supports API keys; account/subscription login is not included.
 
 Each provider keeps its own saved connection. API keys are encrypted on the device and excluded
@@ -69,6 +70,8 @@ For LLMD, choose the installed package in **LLMD build**:
 - Release: `com.storytellerf.llmd`
 - Alpha: `com.storytellerf.llmd.alpha`
 - Debug: `com.storytellerf.llmd.debug`
+
+Each fund source has an ISO currency code, editable in Settings → Accounts (default CNY for existing accounts). Recognition follows the selected account currencies without conversion. Timeline totals are shown separately for each currency.
 
 The choice is saved on device. Debug builds default to LLMD Debug; non-debug builds default to
 LLMD Release until a different package is selected.

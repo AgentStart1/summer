@@ -155,11 +155,11 @@ fun FundSourcesScreen(
         FundSourceDialog(
             fundSource = editingFundSource,
             onDismiss = { showDialog = false },
-            onConfirm = { name ->
+            onConfirm = { name, currency ->
                 if (editingFundSource != null) {
-                    viewModel.updateFundSource(editingFundSource!!.copy(name = name))
+                    viewModel.updateFundSource(editingFundSource!!.copy(name = name, currency = currency))
                 } else {
-                    viewModel.addFundSource(name)
+                    viewModel.addFundSource(name, currency)
                 }
                 showDialog = false
             },
@@ -311,7 +311,7 @@ private fun FundSourceItem(
                 Column {
                     Text(text = fundSource.name, style = MaterialTheme.typography.titleMedium)
                     Text(
-                        text = "Balance source",
+                        text = "Balance source · ${fundSource.currency}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -337,27 +337,40 @@ private fun FundSourceItem(
 private fun FundSourceDialog(
     fundSource: FundSource?,
     onDismiss: () -> Unit,
-    onConfirm: (String) -> Unit,
+    onConfirm: (String, String) -> Unit,
 ) {
     var name by remember { mutableStateOf(fundSource?.name ?: "") }
+    var currency by remember { mutableStateOf(fundSource?.currency ?: "CNY") }
+    val validCurrency = com.storytellerf.summer.data.currencyCode(currency)
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (fundSource != null) "Edit Fund Source" else "Add Fund Source") },
         text = {
-            OutlinedTextField(
-                value = name,
-                onValueChange = { name = it },
-                label = { Text("Fund Source Name") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-                supportingText = { Text("For example: Savings, Cash, or Brokerage") },
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Fund Source Name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    supportingText = { Text("For example: Savings, Cash, or Brokerage") },
+                )
+                OutlinedTextField(value = currency, onValueChange = { currency = it.uppercase(java.util.Locale.ROOT) },
+                    label = { Text("Currency code") }, singleLine = true, isError = validCurrency == null,
+                    supportingText = { Text("ISO code, e.g. USD, EUR, CNY. Amounts are not converted.") },
+                    modifier = Modifier.fillMaxWidth())
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf("CNY", "USD", "EUR", "GBP", "JPY", "HKD").forEach { code ->
+                        FilterChip(selected = currency == code, onClick = { currency = code }, label = { Text(code) })
+                    }
+                }
+            }
         },
         confirmButton = {
             TextButton(
-                onClick = { onConfirm(name) },
-                enabled = name.isNotBlank(),
+                onClick = { onConfirm(name.trim(), requireNotNull(validCurrency)) },
+                enabled = name.isNotBlank() && validCurrency != null,
             ) {
                 Text("Save")
             }

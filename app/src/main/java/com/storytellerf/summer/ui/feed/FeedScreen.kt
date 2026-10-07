@@ -177,9 +177,11 @@ private fun FeedContent(
                 is TimelineItem.Transaction -> BalanceImpactConnector(
                     item.record.amount, item.fundSourceName, item.record.timestamp,
                     item.record.note ?: "Transaction", isDifference = false,
+                    currency = item.currency,
                 )
                 is TimelineItem.Difference -> BalanceImpactConnector(
                     item.amount, item.fundSourceName, item.timestamp, "Balance difference", isDifference = true,
+                    currency = item.currency,
                 )
                 null -> Unit
             }
@@ -260,7 +262,7 @@ private fun BalanceSnapshotCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
-                formatMoney(snapshot.totalBalance),
+                snapshot.fundBalances.groupBy { it.currency }.entries.joinToString("\n") { (currency, funds) -> formatMoney(funds.sumOf { it.balance }, currency) },
                 style = if (isLatest) MaterialTheme.typography.headlineMedium else MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
             )
@@ -308,7 +310,7 @@ private fun FundBalanceRow(
             modifier = Modifier.weight(1f),
         )
         Text(
-            text = formatMoney(fundBalance.balance),
+            text = formatMoney(fundBalance.balance, fundBalance.currency),
             style = MaterialTheme.typography.bodyLarge,
             fontWeight = FontWeight.SemiBold,
         )
@@ -322,6 +324,7 @@ private fun BalanceImpactConnector(
     timestamp: Long,
     title: String,
     isDifference: Boolean,
+    currency: String,
     modifier: Modifier = Modifier,
 ) {
     val isIncrease = amount > 0
@@ -413,7 +416,7 @@ private fun BalanceImpactConnector(
                 )
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(
-                    text = formatSignedMoney(amount),
+                    text = formatSignedMoney(amount, currency),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                     color = amountColor,

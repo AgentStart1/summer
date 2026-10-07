@@ -54,8 +54,12 @@ class KoogOpenRouterLiveTest {
             HttpClient(MockEngine { request ->
                 assertEquals("/api/v1/chat/completions", request.url.encodedPath)
                 assertTrue(request.body.toByteArray().decodeToString().contains("data:image/jpeg;base64,"))
-                respond("""{"id":"test","model":"test-vision","choices":[{"message":{"role":"assistant","content":"-245.70"},"finish_reason":"stop"}]}""",
-                    headers = headersOf("Content-Type", "application/json"))
+                val requestJson = JSONObject(request.body.toByteArray().decodeToString())
+                assertTrue(requestJson.getJSONObject("response_format").getJSONObject("json_schema").getBoolean("strict"))
+                val response = JSONObject("""{"id":"test","model":"test-vision","choices":[{"message":{"role":"assistant"},"finish_reason":"stop"}]}""")
+                response.getJSONArray("choices").getJSONObject(0).getJSONObject("message").put("content",
+                    """{"balances":[{"fundSourceId":null,"balance":-245.70,"label":"balance","currency":"CNY"}]}""")
+                respond(response.toString(), headers = headersOf("Content-Type", "application/json"))
             })
         }
         exerciseRecognition(KoogConnection("https://api.example.com/api/v1", "test-vision", "instrumentation-placeholder-key"), recognizer)
@@ -118,16 +122,22 @@ class KoogOpenRouterLiveTest {
             compose.waitUntil(10_000) {
                 compose.onAllNodesWithText("Koog test wallet").fetchSemanticsNodes().isNotEmpty()
             }
-            compose.onNodeWithText("Koog test wallet").performScrollTo().performClick()
-            // Feed the synthetic image into the same action used by the system image picker.
-            viewModel.extractBalanceFromImage(image.toURI().toString())
+            val source = runBlocking(Dispatchers.IO) { database.fundSourceDao().getById(sourceId)!! }
+            compose.runOnIdle {
+                viewModel.selectFundSource(source)
+                viewModel.selectEntryMode(com.storytellerf.summer.ui.addbalance.BalanceEntryMode.Screenshots)
+                viewModel.extractBalancesFromImages(listOf(image.toURI().toString()))
+            }
             compose.waitUntil(120_000) {
-                viewModel.uiState.value.balance.isNotBlank() || viewModel.uiState.value.errorMessage != null
+                viewModel.uiState.value.balanceRows.isNotEmpty() || viewModel.uiState.value.errorMessage != null
             }
             assertNull("Live recognition should succeed: ${viewModel.uiState.value.errorMessage}", viewModel.uiState.value.errorMessage)
-            compose.onNodeWithText("New Balance").performScrollTo().assertTextContains(String.format(Locale.ROOT, "%.2f", expectedBalance))
-            compose.onNodeWithText("Save Balance Change").performClick()
-            compose.waitUntil(10_000) { viewModel.uiState.value.balance.isEmpty() }
+            val row = viewModel.uiState.value.balanceRows.single()
+            assertEquals(expectedBalance, row.balance.toDouble(), 0.0)
+            compose.runOnIdle { viewModel.updateBalanceRow(row.key, row.copy(fundSourceId = sourceId)) }
+            compose.waitUntil(10_000) { viewModel.uiState.value.balanceRows.single().fundSourceId == sourceId }
+            compose.runOnIdle { viewModel.saveBalanceChange() }
+            compose.waitUntil(10_000) { viewModel.uiState.value.balanceRows.isEmpty() }
             val balance = runBlocking(Dispatchers.IO) { database.balanceChangeDao().getByFundSource(sourceId).first().single().newBalance }
             assertEquals(expectedBalance, balance, 0.0)
         } finally {

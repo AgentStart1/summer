@@ -169,7 +169,7 @@ fun AddBalanceChangeScreen(
                         }
                     }
                     OutlinedTextField(value = state.balance, onValueChange = viewModel::updateBalance,
-                        label = { Text("New Balance") }, prefix = { Text("¥") }, singleLine = true,
+                        label = { Text("New Balance") }, prefix = { Text(state.selectedFundSource?.currency.orEmpty()) }, singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         enabled = editable, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(value = state.dateTime, onValueChange = viewModel::updateDateTime,

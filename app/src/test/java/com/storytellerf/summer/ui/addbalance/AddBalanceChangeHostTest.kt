@@ -31,6 +31,29 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class AddBalanceChangeHostTest {
+    @Test fun batchShowsLlmdFailureWithoutLeakingServiceDetails_andKeepsSuccessfulRows() = runTest {
+        val env = createHostTestEnvironment()
+        val source = FundSource(id = 1, name = "Wallet")
+        val analyzer = object : FinanceImageAnalyzer {
+            override suspend fun extractBalancesFromImage(imageReference: String,
+                targets: List<com.storytellerf.summer.data.recognition.BalanceReadTarget>, target: LlmdTarget): Result<com.storytellerf.summer.data.recognition.RecognizedBalances> =
+                if (imageReference == "failed") Result.failure(com.storytellerf.summer.data.llmd.llmdRecognitionError(
+                    "llmd_error", "Model file does not exist: /private/model/path"))
+                else Result.success(com.storytellerf.summer.data.recognition.RecognizedBalances(
+                    listOf(com.storytellerf.summer.data.recognition.RecognizedAccountBalance(1, 10.0, null)), "saved.jpg"))
+        }
+        val host = AddBalanceChangeHost(FakeDataRepository(fundSources = listOf(source)), analyzer, env.scope, env.dispatchers)
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { host.uiState.collect() }
+        try {
+            host.toggleImageTarget(source)
+            host.extractBalancesFromImages(listOf("failed", "successful")); advanceUntilIdle()
+            assertEquals(1, host.uiState.value.balanceRows.size)
+            assertTrue(host.uiState.value.errorMessage!!.contains("LLMD has no usable model"))
+            assertFalse(host.uiState.value.errorMessage!!.contains("/private/"))
+            assertFalse(host.uiState.value.isImageAnalyzing)
+        } finally { host.close(); env.close() }
+    }
+
     @Test fun screenshotModeCannotSaveAStaleManualDraft_andSwitchingBackPreservesManualInput() = runTest {
         val env = createHostTestEnvironment()
         val source = FundSource(id = 1, name = "Wallet")
@@ -59,7 +82,6 @@ class AddBalanceChangeHostTest {
         val repo = FakeDataRepository(fundSources = listOf(wallet, bank))
         val calls = mutableListOf<String>()
         val analyzer = object : FinanceImageAnalyzer {
-            override suspend fun extractBalanceFromImage(imageReference: String, target: LlmdTarget) = Result.success(0.0)
             override suspend fun extractBalancesFromImage(imageReference: String,
                 targets: List<com.storytellerf.summer.data.recognition.BalanceReadTarget>, target: LlmdTarget): Result<com.storytellerf.summer.data.recognition.RecognizedBalances> {
                 assertEquals(env.ioDispatcher, currentCoroutineContext()[ContinuationInterceptor])
@@ -106,7 +128,6 @@ class AddBalanceChangeHostTest {
         val calls = mutableListOf<String>()
         var needsAuthorization = true
         val analyzer = object : FinanceImageAnalyzer {
-            override suspend fun extractBalanceFromImage(imageReference: String, target: LlmdTarget) = Result.success(0.0)
             override suspend fun extractBalancesFromImage(imageReference: String,
                 targets: List<com.storytellerf.summer.data.recognition.BalanceReadTarget>, target: LlmdTarget): Result<com.storytellerf.summer.data.recognition.RecognizedBalances> {
                 calls += imageReference
@@ -157,182 +178,36 @@ class AddBalanceChangeHostTest {
         } finally { host.close(); env.close() }
     }
 
-    @Test fun screenshotCreationTimeIsReadOnIo_andPreservedToTheMillisecond() = runTest {
+    @Test fun closingHostCancelsBatchRecognition_andRetainsImageTimesFromMetadataOrClock() = runTest {
         val env = createHostTestEnvironment()
         val source = FundSource(id = 1, name = "Wallet")
-        val repo = FakeDataRepository(fundSources = listOf(source))
-        val host = AddBalanceChangeHost(repo, FakeImageAnalyzer(env.ioDispatcher, Result.success(90.0)),
-            env.scope, env.dispatchers, imageCreationTimeReader = ImageCreationTimeReader {
+        val started = CompletableDeferred<Unit>()
+        val cancelled = CompletableDeferred<Unit>()
+        val analyzer = object : FinanceImageAnalyzer {
+            override suspend fun extractBalancesFromImage(imageReference: String,
+                targets: List<com.storytellerf.summer.data.recognition.BalanceReadTarget>, target: LlmdTarget): Result<com.storytellerf.summer.data.recognition.RecognizedBalances> {
+                if (imageReference == "pending") {
+                    started.complete(Unit)
+                    try { awaitCancellation() } finally { cancelled.complete(Unit) }
+                }
+                return Result.success(com.storytellerf.summer.data.recognition.RecognizedBalances(
+                    listOf(com.storytellerf.summer.data.recognition.RecognizedAccountBalance(1, 10.0, null)), "saved.jpg"))
+            }
+        }
+        val host = AddBalanceChangeHost(FakeDataRepository(fundSources = listOf(source)), analyzer, env.scope, env.dispatchers,
+            imageCreationTimeReader = ImageCreationTimeReader { image ->
                 assertEquals(env.ioDispatcher, currentCoroutineContext()[ContinuationInterceptor])
-                1700000000123L
+                if (image == "dated") 1700000000123L else null
             }, now = { 1800000000000L })
-        try {
-            host.selectFundSource(source); host.extractBalanceFromImage("image"); advanceUntilIdle()
-            val effect = async { host.effects.first() }
-            host.saveBalanceChange(); advanceUntilIdle(); effect.await()
-            assertEquals(1700000000123L, repo.insertedBalanceChanges.single().timestamp)
-        } finally { host.close(); env.close() }
-    }
-
-    @Test fun absentCreationMetadataDefaultsToCurrentTime() = runTest {
-        val env = createHostTestEnvironment()
-        val host = AddBalanceChangeHost(FakeDataRepository(), FakeImageAnalyzer(env.ioDispatcher, Result.success(90.0)),
-            env.scope, env.dispatchers, now = { 1700000000000L })
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { host.uiState.collect() }
         try {
-            host.extractBalanceFromImage("image"); advanceUntilIdle()
-            assertEquals(1700000000000L, host.uiState.value.timestamp)
+            host.toggleImageTarget(source)
+            host.extractBalancesFromImages(listOf("dated", "undated", "pending")); advanceUntilIdle()
+            assertEquals(listOf(1700000000123L, 1800000000000L), host.uiState.value.balanceRows.map { it.timestamp })
+            assertTrue(started.isCompleted)
+            host.close(); advanceUntilIdle()
+            assertTrue(cancelled.isCompleted)
         } finally { host.close(); env.close() }
-    }
-
-    @Test fun delayedImageMetadataDoesNotOverwriteManualTime_orAuthorizationRetry() = runTest {
-        val env = createHostTestEnvironment()
-        val metadata = CompletableDeferred<Long?>()
-        val host = AddBalanceChangeHost(FakeDataRepository(), FakeImageAnalyzer(env.ioDispatcher, Result.failure(LlmdAuthorizationException())),
-            env.scope, env.dispatchers, imageCreationTimeReader = ImageCreationTimeReader { metadata.await() })
-        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { host.uiState.collect() }
-        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { host.effects.collect() }
-        try {
-            host.extractBalanceFromImage("image")
-            host.updateDateTime("2020-02-01T00:00:00")
-            advanceUntilIdle()
-            metadata.complete(1700000000123L); advanceUntilIdle()
-            assertEquals("2020-02-01T00:00:00", host.uiState.value.dateTime)
-            host.onAuthorizationResult(true); advanceUntilIdle()
-            assertEquals("2020-02-01T00:00:00", host.uiState.value.dateTime)
-        } finally { host.close(); env.close() }
-    }
-
-    @Test
-    fun recognizedBalance_savesItsRetainedImagePath() = runTest {
-        val env = createHostTestEnvironment()
-        val source = FundSource(id = 1, name = "Wallet")
-        val repo = FakeDataRepository(fundSources = listOf(source))
-        val analyzer = object : FinanceImageAnalyzer {
-            override suspend fun extractBalanceFromImage(imageReference: String, target: LlmdTarget) = Result.success(12.5)
-            override suspend fun extractBalanceWithImage(imageReference: String, target: LlmdTarget) =
-                Result.success(com.storytellerf.summer.data.recognition.RecognizedBalance(12.5, "recognition-images/balance.jpg"))
-        }
-        val host = AddBalanceChangeHost(repo, analyzer, env.scope, env.dispatchers)
-        try {
-            host.selectFundSource(source)
-            host.extractBalanceFromImage("image")
-            advanceUntilIdle()
-            val saved = async { host.effects.first() }
-            host.saveBalanceChange()
-            advanceUntilIdle()
-            assertEquals(AddBalanceChangeEffect.Saved, saved.await())
-            assertEquals("recognition-images/balance.jpg", repo.insertedBalanceChanges.single().imagePath)
-        } finally { host.close(); env.close() }
-    }
-
-    @Test
-    fun saveImmediatelyAfterImport_doesNotSaveThePreviousBalance() = runTest {
-        val environment = createHostTestEnvironment()
-        val source = FundSource(id = 1, name = "Wallet")
-        val repository = FakeDataRepository(fundSources = listOf(source))
-        val analyzer = object : FinanceImageAnalyzer {
-            override suspend fun extractBalanceFromImage(imageReference: String, target: LlmdTarget): Result<Double> =
-                awaitCancellation()
-        }
-        val host = AddBalanceChangeHost(repository, analyzer, environment.scope, environment.dispatchers)
-        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { host.uiState.collect() }
-        host.selectFundSource(source)
-        host.updateBalance("10.00")
-        advanceUntilIdle()
-
-        host.extractBalanceFromImage("content://test/pending")
-        host.saveBalanceChange()
-        advanceUntilIdle()
-        assertTrue(host.uiState.value.isImageAnalyzing)
-        assertTrue(repository.insertedBalanceChanges.isEmpty())
-        host.close()
-        environment.close()
-    }
-
-    @Test
-    fun successfulAnalysisAndSave_useInjectedDispatchersAndPublishEffect() = runTest {
-        val environment = createHostTestEnvironment()
-        val fundSource = FundSource(id = 1, name = "Wallet")
-        val repository = FakeDataRepository(
-            fundSources = listOf(fundSource),
-            expectedDefaultDispatcher = environment.defaultDispatcher,
-            expectedIoDispatcher = environment.ioDispatcher,
-        )
-        val analyzer = FakeImageAnalyzer(
-            expectedDispatcher = environment.ioDispatcher,
-            result = Result.success(380.0),
-        )
-        val host = AddBalanceChangeHost(
-            repository = repository,
-            imageAnalyzer = analyzer,
-            scope = environment.scope,
-            dispatchers = environment.dispatchers,
-            imageAnalysisTarget = flowOf(LlmdTarget.Alpha),
-        )
-        val effects = mutableListOf<AddBalanceChangeEffect>()
-        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
-            host.uiState.collect()
-        }
-        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
-            host.effects.collect(effects::add)
-        }
-
-        advanceUntilIdle()
-        assertEquals(listOf(fundSource), host.uiState.value.fundSources)
-
-        host.extractBalanceFromImage("content://test/balance")
-        advanceUntilIdle()
-        assertEquals("380.00", host.uiState.value.balance)
-        assertEquals("content://test/balance", analyzer.lastImageReference)
-        assertEquals(LlmdTarget.Alpha, analyzer.lastTarget)
-
-        host.selectFundSource(fundSource)
-        host.updateNote("Groceries")
-        host.saveBalanceChange()
-        advanceUntilIdle()
-        environment.close()
-
-        assertEquals(380.0, repository.insertedBalanceChanges.single().newBalance, 0.0)
-        assertEquals("Groceries", repository.insertedBalanceChanges.single().note)
-        assertTrue(AddBalanceChangeEffect.Saved in effects)
-        assertEquals("", host.uiState.value.balance)
-        assertFalse(host.uiState.value.isSaving)
-        host.close()
-        assertTrue(analyzer.closed)
-    }
-
-    @Test
-    fun authorizationFailure_isPublishedAsOneTimeEffect() = runTest {
-        val environment = createHostTestEnvironment()
-        val analyzer = FakeImageAnalyzer(
-            expectedDispatcher = environment.ioDispatcher,
-            result = Result.failure(LlmdAuthorizationException()),
-        )
-        val host = AddBalanceChangeHost(
-            repository = FakeDataRepository(
-                expectedDefaultDispatcher = environment.defaultDispatcher,
-                expectedIoDispatcher = environment.ioDispatcher,
-            ),
-            imageAnalyzer = analyzer,
-            scope = environment.scope,
-            dispatchers = environment.dispatchers,
-            imageAnalysisTarget = flowOf(LlmdTarget.Debug),
-        )
-        val effects = mutableListOf<AddBalanceChangeEffect>()
-        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
-            host.effects.collect(effects::add)
-        }
-
-        host.extractBalanceFromImage("content://test/protected")
-        advanceUntilIdle()
-        environment.close()
-
-        assertEquals(
-            listOf(AddBalanceChangeEffect.RequestAuthorization(LlmdTarget.Debug)),
-            effects,
-        )
-        assertFalse(host.uiState.value.isImageAnalyzing)
     }
 }
 
@@ -340,21 +215,9 @@ private class FakeImageAnalyzer(
     private val expectedDispatcher: CoroutineDispatcher,
     private val result: Result<Double>,
 ) : FinanceImageAnalyzer {
-    var lastImageReference: String? = null
-    var lastTarget: LlmdTarget? = null
-    var closed = false
-
-    override suspend fun extractBalanceFromImage(
-        imageReference: String,
-        target: LlmdTarget,
-    ): Result<Double> {
-        check(currentCoroutineContext()[ContinuationInterceptor] === expectedDispatcher)
-        lastImageReference = imageReference
-        lastTarget = target
-        return result
-    }
-
-    override fun close() {
-        closed = true
+    override suspend fun extractBalancesFromImage(imageReference: String,
+        targets: List<com.storytellerf.summer.data.recognition.BalanceReadTarget>, target: LlmdTarget) = result.map {
+        com.storytellerf.summer.data.recognition.RecognizedBalances(
+            listOf(com.storytellerf.summer.data.recognition.RecognizedAccountBalance(targets.single().fundSourceId, it, null)), null)
     }
 }

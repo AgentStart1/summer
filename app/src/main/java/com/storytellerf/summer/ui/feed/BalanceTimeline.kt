@@ -16,7 +16,7 @@ sealed interface TimelineItem {
         override val key = "snapshot:${snapshot.id}"
         override val timestamp = snapshot.timestamp
     }
-    data class Transaction(val record: BalanceImpactRecord, val fundSourceName: String) : TimelineItem {
+    data class Transaction(val record: BalanceImpactRecord, val fundSourceName: String, val currency: String = "CNY") : TimelineItem {
         override val key = "transaction:${record.id}"
         override val timestamp = record.timestamp
     }
@@ -26,6 +26,7 @@ sealed interface TimelineItem {
         val amount: Double,
         val fundSourceName: String,
         val fundSourceId: Long = 0,
+        val currency: String = "CNY",
     ) : TimelineItem {
         override val key = "difference:$balanceGroupId:$fundSourceId"
     }
@@ -34,13 +35,13 @@ sealed interface TimelineItem {
 data class BalanceSnapshot(
     val id: Long,
     val timestamp: Long,
-    val totalBalance: Double,
+    val totalBalance: Double?,
     val fundBalances: List<FundBalance>,
     val startTimestamp: Long = timestamp,
     val recordIds: List<Long> = listOf(id),
 )
 
-data class FundBalance(val fundSourceId: Long, val fundSourceName: String, val balance: Double)
+data class FundBalance(val fundSourceId: Long, val fundSourceName: String, val balance: Double, val currency: String = "CNY")
 
 internal fun buildBalanceTimeline(
     balanceChanges: List<BalanceChange>,
@@ -56,9 +57,9 @@ internal fun buildBalanceTimeline(
         balances[change.fundSourceId] = change.newBalance
         val group = groupsByEnd[change.id] ?: return@mapNotNull null
         val funds = orderedSources.mapNotNull { source ->
-            balances[source.id]?.let { FundBalance(source.id, sourceById.getValue(source.id).name, it) }
+            balances[source.id]?.let { FundBalance(source.id, sourceById.getValue(source.id).name, it, source.currency) }
         }
-        BalanceSnapshot(group.minOf { it.id }, change.timestamp, funds.sumOf(FundBalance::balance), funds,
+        BalanceSnapshot(group.minOf { it.id }, change.timestamp, funds.takeIf { it.map(FundBalance::currency).distinct().size <= 1 }?.sumOf(FundBalance::balance), funds,
             group.last().timestamp, group.map { it.id })
     }.asReversed()
 }
@@ -66,6 +67,7 @@ internal fun buildBalanceTimeline(
 internal fun flattenTimeline(page: TimelinePage, isFirstPage: Boolean): List<TimelineItem> {
     val snapshots = buildBalanceTimeline(page.changes, page.fundSources, page.precedingBalances)
     val names = page.fundSources.associate { it.id to it.name }
+    val currencies = page.fundSources.associate { it.id to it.currency }
     val previous = page.precedingBalances.associate { it.fundSourceId to it.newBalance }.toMutableMap()
     val groupByRecord = snapshots.flatMap { snapshot -> snapshot.recordIds.map { it to snapshot } }.toMap()
     val remainingByAccount = mutableMapOf<Pair<Long, Long>, BigDecimal>()
@@ -81,14 +83,15 @@ internal fun flattenTimeline(page: TimelinePage, isFirstPage: Boolean): List<Tim
     }
     val snapshotsById = snapshots.associateBy { it.id }
     val differences = remainingByAccount.mapNotNull { (key, amount) ->
-        val remaining = amount.setScale(2, RoundingMode.HALF_UP)
+        val digits = java.util.Currency.getInstance(currencies[key.second] ?: "CNY").defaultFractionDigits
+        val remaining = amount.setScale(digits, RoundingMode.HALF_UP)
         if (remaining.signum() == 0) null else TimelineItem.Difference(key.first,
-            snapshotsById.getValue(key.first).timestamp, remaining.toDouble(), names[key.second] ?: "Unknown fund", key.second)
+            snapshotsById.getValue(key.first).timestamp, remaining.toDouble(), names[key.second] ?: "Unknown fund", key.second, currencies[key.second] ?: "CNY")
     }
     return (snapshots.mapIndexed { index, snapshot ->
         TimelineItem.Snapshot(snapshot, isFirstPage && index == 0)
     } + differences + page.records.map { record ->
-        TimelineItem.Transaction(record, names[record.fundSourceId] ?: "Unknown fund")
+        TimelineItem.Transaction(record, names[record.fundSourceId] ?: "Unknown fund", currencies[record.fundSourceId] ?: "CNY")
     }).sortedWith(compareByDescending<TimelineItem> { it.timestamp }
         .thenBy { if (it is TimelineItem.Snapshot) 0 else 1 }
         .thenByDescending { when (it) {

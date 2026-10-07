@@ -81,8 +81,8 @@ class FeedHostTest {
         try {
             val items = host.items.asSnapshot { scrollTo(88) }
             assertEquals(89, items.size)
-            assertEquals(45.0, (items.first() as TimelineItem.Snapshot).snapshot.totalBalance, 0.0)
-            assertEquals(1.0, (items.last() as TimelineItem.Snapshot).snapshot.totalBalance, 0.0)
+            assertEquals(45.0, requireNotNull((items.first() as TimelineItem.Snapshot).snapshot.totalBalance), 0.0)
+            assertEquals(1.0, requireNotNull((items.last() as TimelineItem.Snapshot).snapshot.totalBalance), 0.0)
             assertEquals(listOf(0, 20, 40), repository.requestedOffsets.distinct())
         } finally { host.close(); environment.close() }
     }

@@ -4,6 +4,7 @@ import com.storytellerf.summer.data.DataRepository
 import com.storytellerf.summer.data.db.entity.BalanceImpactRecord
 import com.storytellerf.summer.data.db.entity.FundSource
 import com.storytellerf.summer.data.llmd.LlmdAuthorizationException
+import com.storytellerf.summer.data.llmd.LlmdRecognitionException
 import com.storytellerf.summer.data.llmd.LlmdTarget
 import com.storytellerf.summer.data.recognition.FinanceImageAnalyzer
 import com.storytellerf.summer.data.recognition.formatLocalDateTime
@@ -66,6 +67,10 @@ class ImportTransactionsHost(
 
     fun recognize(image: String) = hostScope.launch {
         if (form.value.isSaving) return@launch
+        if (form.value.fundSourceId == null) {
+            form.update { it.copy(error = "Select an account and its currency before choosing an image") }
+            return@launch
+        }
         pendingImage = image
         analyze(image)
     }
@@ -76,7 +81,10 @@ class ImportTransactionsHost(
         analysisJob = hostScope.launch {
             try {
                 val selectedTarget = withContext(dispatchers.io) { target.first() }
-                val result = withContext(dispatchers.io) { analyzer.extractTransactionsFromImage(image, selectedTarget) }
+                val currency = withContext(dispatchers.io) { repository.getFundSourceById(requireNotNull(form.value.fundSourceId))?.currency }
+                    ?: error("Selected account no longer exists")
+                form.update { it.copy(currency = currency) }
+                val result = withContext(dispatchers.io) { analyzer.extractTransactionsFromImage(image, selectedTarget, currency) }
                 ensureActive()
                 val error = result.exceptionOrNull()
                 if (error is CancellationException) throw error
@@ -102,7 +110,8 @@ class ImportTransactionsHost(
                 throw error
             } catch (error: Exception) {
                 pendingImage = null
-                form.update { it.copy(error = "Could not recognize transactions. Check recognition settings and use a screenshot with full dates and signed CNY amounts.") }
+                form.update { it.copy(error = if (error is LlmdRecognitionException) error.message
+                    else "Could not recognize transactions. Check recognition settings and use a screenshot with readable amounts and income/expense direction.") }
             } finally {
                 if (isActive) form.update { it.copy(isAnalyzing = false) }
             }
@@ -145,13 +154,16 @@ class ImportTransactionsHost(
             return@launch
         }
         try {
-            val imported = withContext(dispatchers.io) { repository.importTransactions(records.filterNotNull()) }
+            val imported = withContext(dispatchers.io) {
+                require(repository.getFundSourceById(sourceId)?.currency == state.currency)
+                repository.importTransactions(records.filterNotNull())
+            }
             if (imported == 0) form.update { it.copy(error = "These screenshot rows have already been imported for this account") }
             else effectChannel.send(ImportTransactionsEffect.Saved(imported))
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
-            form.update { it.copy(error = "Could not save transactions. Check that the account still exists and try again.") }
+            form.update { it.copy(error = "Could not save transactions. Check that the account and its currency are unchanged and try again.") }
         } finally {
             if (isActive) form.update { it.copy(isSaving = false) }
         }
@@ -166,7 +178,7 @@ class ImportTransactionsHost(
 
 data class TransactionDraft(val imageRow: Int, val date: String, val amount: String, val note: String, val selected: Boolean = true, val transactionId: String = "")
 data class ImportTransactionsUiState(
-    val fundSources: List<FundSource> = emptyList(), val fundSourceId: Long? = null,
+    val fundSources: List<FundSource> = emptyList(), val fundSourceId: Long? = null, val currency: String? = null,
     val rows: List<TransactionDraft> = emptyList(), val imageHash: String? = null, val imagePath: String? = null,
     val isAnalyzing: Boolean = false, val isSaving: Boolean = false, val error: String? = null,
 )

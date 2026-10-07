@@ -72,7 +72,13 @@ LLMD adapter or `KoogImageRecognizer`. The existing LLMD target flow still deter
 which installed package receives IPC and authorization requests. Both paths share
 `RecognitionImageEncoder`, which bounds image decoding, resizes to 1600 pixels, and limits JPEG
 payloads to 500 KB. Koog uses an explicit Ktor OkHttp transport on Android; clients and
-transport are closed after each request, and cancellation propagates.
+transport are closed after each request, and cancellation propagates. Only multi-balance and
+transaction recognition interfaces remain; the old scalar balance interface and zero fallback
+were removed. Both backends share the English prompts and shape schemas. Koog sends native
+JSON Schema through `LLMParams.Schema.JSON.Standard`: strict `response_format` for Chat
+Completions, `text.format` for Responses, and `output_config.format` for Claude. OpenRouter
+requires parameter support in routing. Unsupported schemas fail without text retries. Array
+row caps remain in the parsers because Claude does not support schema `maxItems`.
 
 `RecognitionSettingsHost` owns settings state and actions independently of Compose.
 It coordinates on the injected serial dispatcher and performs persistence on IO.
@@ -119,8 +125,8 @@ use the account's preceding balance at that time rather than the latest balance.
 `ImportTransactionsHost` owns recognition, LLMD authorization retry, editable preview,
 selection and batch persistence on the serial coordination dispatcher. Image recognition
 and database work run on IO; parsing and preview preparation run on worker dispatchers.
-Both LLMD (strict JSON schema) and Koog support transaction arrays with local ISO dates,
-signed CNY amounts, notes and nullable original transaction IDs. The parser accepts a bare
+Both LLMD and Koog require JSON Schema for transaction arrays with local ISO dates,
+signed amounts in the selected fund-source currency, notes and nullable original transaction IDs. The parser accepts a bare
 JSON object or one enclosing JSON code fence from a model; surrounding prose and malformed
 payloads are rejected. Missing/relative dates stay null in recognition and must be completed
 in the preview before saving. Missing IDs stay null;
@@ -183,8 +189,8 @@ moves. Callers must write through `DataRepository` to preserve this invariant.
 The order `(fundSourceId, timestamp)` index bounds interval aggregation. Coverage is a net
 amount, not a count or absolute sum, and is not capped at the observed balance change.
 The timeline subtracts persisted coverage from the change in adjacent actual account balances
-(falling back to `previousBalance` for an initial legacy record). Differences round to CNY
-cents and disappear at zero; an excess of expenses can produce a positive difference.
+(falling back to `previousBalance` for an initial legacy record). Differences round to the fund-source currency’s
+fraction digits and disappear at zero; an excess of expenses can produce a positive difference.
 
 `groupBalanceRows` partitions readings newest-first. A group's whole timestamp span is
 at most 600,000 milliseconds, and repeated fund-source IDs must have equal balances.
@@ -210,7 +216,14 @@ sequentially recognizing up to 20 images. Each image defaults to its own creatio
 unknown account IDs remain unassigned in the preview. Both LLMD and Koog use strict balance
 arrays with selected IDs or null and share one retained JPEG per image. Authorization
 resumes the current image without duplicating completed rows. Failed images leave completed
-rows reviewable. The preview supports account assignment, amount/time/note editing and row
+rows reviewable. Balance labels match by meaning across languages (for example, Account
+balance matches 余额); missing platform names produce unassigned rows instead of dropping
+readable balances. Both prompts are English. Each target carries its ISO currency code; explicit mismatches
+are excluded without conversion, while missing or ambiguous symbols remain reviewable.
+FundSource.currency defaults to CNY during the automatic 1→2 migration. Snapshot totals
+are grouped by currency; a mixed-currency snapshot has no combined total. LLMD service failures use classified messages
+without exposing model paths or response contents; they are distinct from an empty result.
+The preview supports account assignment, amount/time/note editing and row
 deselection. All selected rows are validated before `insertBalanceChanges` atomically inserts
 them, recalculates affected account coverage and rebuilds groups. Foreign-key or other write
 failures roll back the entire batch. Database version remains 2 for this PR.
@@ -239,7 +252,7 @@ contains a [transaction detail screenshot](https://tfsimg.alipay.com/images/cspr
 showing `-20.70`, `2018-11-05 10:59` and a masked ID. Its expected JSON is:
 
 ```json
-{"transactions":[{"timestamp":"2018-11-05T10:59:00","amount":-20.70,"note":"饿了么","transactionId":null}]}
+{"transactions":[{"timestamp":"2018-11-05T10:59:00","amount":-20.70,"note":"饿了么","transactionId":null,"currency":"CNY"}]}
 ```
 
 The [Alipay list screenshot](https://tfsimg.alipay.com/images/cspropmng/TB1lwuCXJC2aKRkUvMH761PkFXa)
@@ -248,7 +261,7 @@ uses relative dates without an absolute reference, and the
 The Alipay list should retain five signed transactions with `timestamp:null`; the test
 verifies that persistence is blocked until the preview dates are filled. The synthetic date
 entered by the test exercises manual correction and is not a claimed date from the screenshot.
-The Sylq euro list uses `{"transactions":[]}` to expect rejection under the CNY contract.
+The Sylq euro list uses `{"transactions":[]}` to expect rejection for a selected CNY account.
 Masked identifiers are never usable deduplication IDs.
 
 With a booted emulator, run:

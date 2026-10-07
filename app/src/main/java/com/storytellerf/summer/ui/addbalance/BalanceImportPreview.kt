@@ -43,7 +43,7 @@ internal fun BalanceImportPreview(state: AddBalanceChangeUiState, viewModel: Add
                 parseBalanceInput(row.balance) == null -> "Check the balance amount"
                 else -> null
             }
-            ReviewItem(title = account ?: "Unassigned balance ${index + 1}", amount = parseBalanceInput(row.balance)?.let(::formatMoney) ?: row.balance,
+            ReviewItem(title = account ?: "Unassigned balance ${index + 1}", amount = parseBalanceInput(row.balance)?.let { formatMoney(it, row.currency ?: state.imageTargets.firstOrNull { target -> target.fundSourceId == row.fundSourceId }?.currency ?: "?") } ?: row.balance,
                 subtitle = "Image ${row.imageIndex + 1} · ${row.label.ifBlank { "Account balance" }}\n${row.dateTime.replace('T', ' ')}",
                 selected = row.selected, editable = editable, onSelected = { viewModel.updateBalanceRow(row.key, row.copy(selected = it)) },
                 onEdit = { editingKey = row.key }, issue = issue.takeIf { row.selected }, selectionLabel = "Include balance ${index + 1}")
@@ -55,15 +55,15 @@ internal fun BalanceImportPreview(state: AddBalanceChangeUiState, viewModel: Add
             Text("Account", style = MaterialTheme.typography.labelLarge)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 state.imageTargets.forEach { target ->
-                    FilterChip(selected = row.fundSourceId == target.fundSourceId, enabled = editable,
+                    FilterChip(selected = row.fundSourceId == target.fundSourceId, enabled = editable && (row.currency == null || row.currency == target.currency),
                         modifier = Modifier.semantics { contentDescription = "Assign ${target.name}" },
                         onClick = { viewModel.updateBalanceRow(row.key, row.copy(fundSourceId = target.fundSourceId)) },
-                        label = { Text(target.name) })
+                        label = { Text("${target.name} · ${target.currency}") })
                 }
             }
             if (row.fundSourceId == null) Text("Choose the account this balance belongs to.", color = MaterialTheme.colorScheme.error)
             OutlinedTextField(value = row.balance, onValueChange = { viewModel.updateBalanceRow(row.key, row.copy(balance = it)) },
-                label = { Text("Balance (CNY)") }, prefix = { Text("¥") }, singleLine = true,
+                label = { Text("Balance") }, prefix = { Text(row.currency ?: state.imageTargets.firstOrNull { it.fundSourceId == row.fundSourceId }?.currency.orEmpty()) }, singleLine = true,
                 enabled = editable, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(value = row.dateTime, onValueChange = {
                 viewModel.updateBalanceRow(row.key, row.copy(dateTime = it, timestamp = parseLocalDateTime(it.trim())))

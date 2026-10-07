@@ -26,5 +26,3 @@ class FileRecognitionImageStore(private val filesDir: File) : RecognitionImageSt
         return target.relativeTo(filesDir).invariantSeparatorsPath
     }
 }
-
-data class RecognizedBalance(val balance: Double, val imagePath: String?)

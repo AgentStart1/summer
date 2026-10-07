@@ -34,6 +34,9 @@ def main():
     expected = json.loads(options.expected_json.read_text())
     if not isinstance(expected.get('transactions'), list):
         parser.error('Expected JSON must contain a transactions array')
+    required = {'timestamp', 'amount', 'note', 'transactionId', 'currency'}
+    if any(not isinstance(row, dict) or set(row) != required for row in expected['transactions']):
+        parser.error('Each expected row must contain timestamp, amount, note, transactionId and currency (ISO code or null)')
     if not options.skip_build:
         run([str(PROJECT / 'gradlew'), ':app:assembleDebug', ':app:assembleDebugAndroidTest', '--max-workers=2'], cwd=PROJECT)
     api_key = os.environ.get(options.key_env, '').strip() if options.live else ''

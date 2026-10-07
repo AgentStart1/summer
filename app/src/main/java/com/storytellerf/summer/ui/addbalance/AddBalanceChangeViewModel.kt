@@ -55,10 +55,6 @@ class AddBalanceChangeViewModel(
     fun updateBalanceRow(key: String, row: BalanceDraft) { host.updateBalanceRow(key, row) }
     fun clearBalancePreview() { host.clearBalancePreview() }
 
-    fun extractBalanceFromImage(imageReference: String) {
-        host.extractBalanceFromImage(imageReference)
-    }
-
     fun onAuthorizationResult(authorized: Boolean) {
         host.onAuthorizationResult(authorized)
     }

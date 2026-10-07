@@ -61,8 +61,8 @@ class BalanceScreenshotImportTest {
                     assertTrue(body.contains("Bank"))
                     assertTrue(body.contains("data:image/jpeg;base64,"))
                     val content = if (requests++ == 0)
-                        """{"balances":[{"fundSourceId":${a.id},"balance":100.0,"label":"Cash"},{"fundSourceId":null,"balance":200.0,"label":"Savings"}]}"""
-                        else """{"balances":[{"fundSourceId":${b.id},"balance":200.0,"label":"Savings"}]}"""
+                        """{"balances":[{"fundSourceId":${a.id},"balance":100.0,"label":"Cash","currency":null},{"fundSourceId":null,"balance":200.0,"label":"Savings","currency":null}]}"""
+                        else """{"balances":[{"fundSourceId":${b.id},"balance":200.0,"label":"Savings","currency":null}]}"""
                     val response = buildJsonObject {
                         put("id", "fixture"); put("object", "chat.completion"); put("created", 1); put("model", "fixture")
                         putJsonArray("choices") { addJsonObject {
@@ -81,7 +81,6 @@ class BalanceScreenshotImportTest {
             }
             val encoder = RecognitionImageEncoder(context)
             val analyzer = ConfiguredImageAnalyzer(settings, object : FinanceImageAnalyzer {
-                override suspend fun extractBalanceFromImage(imageReference: String, target: LlmdTarget): Result<Double> = error("Not LLMD")
             }, { encoder.encode(it.toUri()) }, recognizer, FileRecognitionImageStore(root))
             val model = AddBalanceChangeViewModel(repo, analyzer, imageCreationTimeReader = ImageCreationTimeReader {
                 if (it == first.toUri().toString()) 1700000000123L else 1700000300456L

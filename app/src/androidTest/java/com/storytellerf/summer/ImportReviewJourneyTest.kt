@@ -42,8 +42,7 @@ class ImportReviewJourneyTest {
             val source = FundSource(id = repo.insertFundSource(FundSource(name = "Daily Wallet")), name = "Daily Wallet")
             val date = requireNotNull(parseLocalDateTime("2026-10-07T09:30:00"))
             val analyzer = object : FinanceImageAnalyzer {
-                override suspend fun extractBalanceFromImage(imageReference: String, target: LlmdTarget) = Result.success(0.0)
-                override suspend fun extractTransactionsFromImage(imageReference: String, target: LlmdTarget) = Result.success(
+                override suspend fun extractTransactionsFromImage(imageReference: String, target: LlmdTarget, currency: String?) = Result.success(
                     RecognizedTransactions("review-fixture", listOf(
                         RecognizedTransaction(date, -12.5, "Coffee", "ORDER-001"),
                         RecognizedTransaction(null, 50.0, "Cashback", "ORDER-002"),
