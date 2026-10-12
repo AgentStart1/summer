@@ -20,13 +20,15 @@ internal fun parseTransactions(content: String, timeZone: TimeZone = TimeZone.ge
             .matchEntire(trimmed)?.groupValues?.get(1) ?: trimmed
         val values = Json.decodeFromString<TransactionPayload>(json).transactions
         require(values.size in 1..100)
-        values.map { value ->
+        values.mapNotNull { value ->
+            val recognizedCurrency = value.currency?.uppercase(java.util.Locale.ROOT)
+            if (currency != null && recognizedCurrency != null && recognizedCurrency != currency) {
+                return@mapNotNull null
+            }
             val timestamp = value.timestamp?.let { requireNotNull(parseLocalDateTime(it, timeZone)) }
             require(value.amount.isFinite())
-            val recognizedCurrency = value.currency?.uppercase(java.util.Locale.ROOT)
-            require(currency == null || recognizedCurrency == null || recognizedCurrency == currency)
             RecognizedTransaction(timestamp, value.amount, value.note?.trim()?.takeIf(String::isNotEmpty), value.transactionId?.trim()?.takeIf(String::isNotEmpty), recognizedCurrency)
-        }
+        }.also { require(it.isNotEmpty()) }
     } catch (error: Exception) {
         throw InvalidTransactionResponseException()
     }

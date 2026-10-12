@@ -5,6 +5,19 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class TransactionRecognitionTest {
+    @Test fun mixedCurrenciesKeepSelectedAndUndeterminedRows_inVisibleOrder() {
+        val content = """{"transactions":[
+            {"timestamp":null,"amount":-10,"note":"Selected","transactionId":"USD-1","currency":"usd"},
+            {"timestamp":null,"amount":-20,"note":"Other currency","transactionId":"EUR-1","currency":"EUR"},
+            {"timestamp":null,"amount":-30,"note":"Undetermined","transactionId":null,"currency":null}
+        ]}"""
+        val rows = parseTransactions(content, currency = "USD")
+        assertEquals(listOf(-10.0, -30.0), rows.map { it.amount })
+        assertEquals(listOf("USD", null), rows.map { it.currency })
+        assertEquals(listOf("USD-1", null), rows.map { it.transactionId })
+        assertEquals(3, parseTransactions(content).size)
+    }
+
     @Test fun accountCurrencyAcceptsEuroAndUnknownCurrency_butRejectsAnExplicitMismatch() {
         val content = """{"transactions":[{"timestamp":null,"amount":-12.5,"note":null,"transactionId":null,"currency":"EUR"}]}"""
         assertEquals("EUR", parseTransactions(content, currency = "EUR").single().currency)
