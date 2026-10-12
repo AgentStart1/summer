@@ -2,6 +2,7 @@
 """Test a public transaction screenshot through encoding, preview and Room (mock API by default)."""
 
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -28,17 +29,20 @@ def main():
     parser.add_argument('--live', action='store_true', help='Use real OpenRouter recognition instead of a mock response')
     parser.add_argument('--key-env', default='OPENROUTER_API_KEY', help='Variable name, never the credential value')
     parser.add_argument('--model', help='Free vision model ID, checked against the current provider catalog')
+    parser.add_argument('--currency', default='CNY', help='ISO currency of the test account')
+    parser.add_argument('--proxy-port', type=int, help='Optional device-local HTTP CONNECT proxy port')
     options = parser.parse_args()
     if not options.image.is_file() or not options.expected_json.is_file():
         parser.error('--image and --expected-json must be existing files')
-    expected = json.loads(options.expected_json.read_text())
+    expected = json.loads(options.expected_json.read_text(encoding='utf-8'))
     if not isinstance(expected.get('transactions'), list):
         parser.error('Expected JSON must contain a transactions array')
     required = {'timestamp', 'amount', 'note', 'transactionId', 'currency'}
     if any(not isinstance(row, dict) or set(row) != required for row in expected['transactions']):
         parser.error('Each expected row must contain timestamp, amount, note, transactionId and currency (ISO code or null)')
     if not options.skip_build:
-        run([str(PROJECT / 'gradlew'), ':app:assembleDebug', ':app:assembleDebugAndroidTest', '--max-workers=2'], cwd=PROJECT)
+        wrapper = 'gradlew.bat' if os.name == 'nt' else 'gradlew'
+        run([str(PROJECT / wrapper), ':app:assembleDebug', ':app:assembleDebugAndroidTest', '--max-workers=2'], cwd=PROJECT)
     api_key = os.environ.get(options.key_env, '').strip() if options.live else ''
     if options.live and not api_key:
         raise RuntimeError(f'The environment variable {options.key_env} is not configured')
@@ -62,11 +66,16 @@ def main():
     names = ['transaction-test-image', 'transaction-test-expected.json', 'transaction-test-key']
     try:
         for name, data in zip(names, [options.image.read_bytes(), options.expected_json.read_bytes(), api_key.encode()]):
-            run(adb + ['shell', 'run-as', APP, 'sh', '-c', f"'mkdir -p no_backup && cat > no_backup/{name} && chmod 600 no_backup/{name}'"],
-                input=data, capture_output=True)
+            run(adb + ['shell', 'run-as', APP, 'sh', '-c', f"'mkdir -p no_backup && base64 -d > no_backup/{name} && chmod 600 no_backup/{name}'"],
+                input=base64.b64encode(data), capture_output=True)
+        checksum = run(adb + ['shell', 'run-as', APP, 'sha256sum', 'no_backup/transaction-test-image'], capture_output=True, text=True).stdout.split()[0]
+        if checksum != hashlib.sha256(options.image.read_bytes()).hexdigest():
+            raise RuntimeError('The screenshot transfer checksum does not match')
         result = run(adb + ['shell', 'am', 'instrument', '-w', '-r', '-e', 'class',
                     'com.storytellerf.summer.TransactionScreenshotImportTest#externalScreenshotThroughEncoderPreviewAndDatabase',
                     '-e', 'transaction_live', str(options.live).lower(), '-e', 'transaction_model', model,
+                    '-e', 'transaction_currency', options.currency,
+                    *(['-e', 'recognition_proxy_port', str(options.proxy_port)] if options.proxy_port else []),
                     APP + '.test/androidx.test.runner.AndroidJUnitRunner'], capture_output=True, text=True)
         print(result.stdout)
         if 'OK (1 test)' not in result.stdout or 'FAILURES' in result.stdout:

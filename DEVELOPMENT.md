@@ -1,6 +1,6 @@
 # Development
 
-Use JDK 17, Android SDK platform 36, and an Android emulator. The Gradle wrapper downloads
+Use JDK 17, Android SDK platform 36, and an Android emulator or USB-connected physical device. The Gradle wrapper downloads
 the required Gradle version.
 
 ```sh
@@ -11,6 +11,12 @@ the required Gradle version.
 ./gradlew :app:connectedDebugAndroidTest
 ```
 
+Use `gradlew.bat` on Windows. Set `ANDROID_SERIAL` when selecting a device for Gradle,
+and pass the same serial to the Python runners. Keep a physical device unlocked and awake
+throughout UI tests: a sleeping/locked screen prevents Compose lifecycle collectors from
+running. Restore any temporary keep-awake setting after testing. Device suites install the
+separate Debug application and reset its test database; use a device without valuable Debug data.
+
 The standard instrumented suite exercises finance, recognition settings, and the Koog
 image-to-form-to-database path with a mock HTTP transport. The live
 OpenRouter test skips unless explicitly provisioned by the runner below.
@@ -19,7 +25,7 @@ OpenRouter test skips unless explicitly provisioned by the runner below.
 
 Set `OPENROUTER_API_KEY` in the test process environment using your environment's secret
 configuration. Do not put it in Gradle properties, source files, instrumentation arguments,
-shell command history, or the APK. With an emulator booted:
+shell command history, or the APK. With a device connected:
 
 ```sh
 python3 scripts/test-openrouter.py --serial emulator-5554
@@ -27,7 +33,7 @@ python3 scripts/test-openrouter.py --serial emulator-5554
 
 Use `--key-env VARIABLE_NAME` if the secret has a different environment variable name.
 The runner checks OpenRouter's current model catalog and selects a `:free` model with image
-input and zero prompt/completion prices. `--model MODEL_ID` selects another eligible model;
+input, structured-output support and zero prompt/completion prices. `--model MODEL_ID` selects another eligible model;
 there is no automatic switch to a paid model. Free services may still require account
 permissions and have rate or capacity limits.
 
@@ -36,7 +42,7 @@ repository, inspect its balance manually, and supply both the image and expected
 
 ```sh
 python3 scripts/test-openrouter.py --serial emulator-5554 \
-  --image /tmp/screenshot.jpg --expected-balance -41.54
+  --image /tmp/screenshot.jpg --expected-balance -41.54 --currency USD
 ```
 
 For example, the [Cashew developer website](https://cashewapp.web.app/) publishes a
@@ -64,6 +70,17 @@ the image picker through the production encoder/Koog client, checks the rendered
 saves it through the form to Room. System picker navigation is outside this test. The test
 restores the previous provider configuration and removes fixtures; the runner also removes
 the temporary key file and screenshot in `finally`, including on failure.
+
+Both Python runners use the Windows Gradle wrapper automatically. Use `--skip-build` after
+building both Debug APKs. The test account defaults to CNY; set `--currency` to the screenshot's
+account currency (for example USD for Cashew or GBP for Monzo). A model must currently support
+images and native JSON Schema; free-model availability alone does not establish schema support.
+Screenshot transfers use base64 over ADB stdin and verify SHA-256 on the device, avoiding
+binary stdin corruption on Windows. Credentials remain outside command arguments and logs.
+For a device without internet, an external HTTP CONNECT proxy can be forwarded with
+`adb -s SERIAL reverse tcp:PORT tcp:PORT`; pass `--proxy-port PORT` to either runner. This
+changes only the instrumented test transport, retains normal TLS/certificate verification,
+and requires removing the ADB reverse mapping and stopping the proxy after the test.
 
 ## Recognition architecture
 
@@ -274,6 +291,13 @@ python3 scripts/test-transactions.py --serial emulator-5554 \
 The runner builds APKs, installs them when needed, transfers the external
 fixture through stdin into app-private no-backup files, runs the screenshot test and removes fixtures.
 Use `--skip-build` when the APKs have already been built.
+Use `--currency ISO_CODE` to exercise a different account currency; the default CNY account
+intentionally rejects the Sylq euro fixture.
+Empty-result expectations require the parser's recognition rejection; network, provider and
+image-decoding failures must fail the test rather than count as successful currency filtering.
+The external screenshot test allows 180 seconds overall, covering the production client's
+90-second request limit plus UI review and persistence; the coroutine test default of 60 seconds
+would cancel a valid slow provider request too early.
 The default mock API response is the manually checked expected JSON: this verifies the
 production encoder, Koog image request, editable preview, confirmation, duplicate handling,
 Room persistence and the retained image bytes. It does **not** validate model recognition accuracy.

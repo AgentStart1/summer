@@ -33,7 +33,6 @@ import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.engine.mock.toByteArray
 import io.ktor.http.headersOf
-import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import kotlinx.coroutines.Dispatchers
@@ -72,20 +71,21 @@ class KoogOpenRouterLiveTest {
         val credentials = runBlocking(Dispatchers.IO) { JSONObject(credentialFile.readText()) }
         try {
             runBlocking(Dispatchers.IO) {
-                val client = HttpClient(OkHttp)
+                val client = liveRecognitionTransport()
                 try {
                     val response = client.get("https://openrouter.ai/api/v1/key") {
                         header("Authorization", "Bearer ${credentials.getString("apiKey")}")
                     }
-                    assertEquals("The API key must authenticate from the emulator", 200, response.status.value)
+                    assertEquals("The API key must authenticate from the device", 200, response.status.value)
                 } finally {
                     client.close()
                 }
             }
             exerciseRecognition(KoogConnection("https://openrouter.ai/api/v1", credentials.getString("model"), credentials.getString("apiKey")),
-                KoogImageRecognizer(),
+                KoogImageRecognizer(::liveRecognitionTransport),
                 inputImage = if (credentials.has("image")) File(context.noBackupFilesDir, credentials.getString("image")) else null,
-                expectedBalance = credentials.optDouble("expectedBalance", -245.70))
+                expectedBalance = credentials.optDouble("expectedBalance", -245.70),
+                currency = credentials.optString("currency", "CNY"))
         } finally {
             credentialFile.delete()
         }
@@ -96,6 +96,7 @@ class KoogOpenRouterLiveTest {
         recognizer: RemoteImageRecognizer,
         inputImage: File? = null,
         expectedBalance: Double = -245.70,
+        currency: String = "CNY",
     ) {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val settings = DataStoreRecognitionSettings(context)
@@ -103,7 +104,7 @@ class KoogOpenRouterLiveTest {
         val database = SummerDatabase.getInstance(context)
         val image = inputImage ?: File(context.cacheDir, "synthetic-balance.png")
         val sourceId = runBlocking(Dispatchers.IO) {
-            database.fundSourceDao().insert(FundSource(name = "Koog test wallet"))
+            database.fundSourceDao().insert(FundSource(name = "Koog test wallet", currency = requireNotNull(com.storytellerf.summer.data.currencyCode(currency))))
         }
         try {
             runBlocking(Dispatchers.IO) {

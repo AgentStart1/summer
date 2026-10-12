@@ -25,6 +25,7 @@ import io.ktor.client.engine.mock.respond
 import io.ktor.client.engine.mock.toByteArray
 import io.ktor.http.headersOf
 import java.io.File
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
@@ -39,7 +40,7 @@ import org.junit.Test
 class TransactionScreenshotImportTest {
     @get:Rule val compose = createComposeRule()
 
-    @Test fun externalScreenshotThroughEncoderPreviewAndDatabase() = runTest {
+    @Test fun externalScreenshotThroughEncoderPreviewAndDatabase() = runTest(timeout = 180.seconds) {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val image = File(context.noBackupFilesDir, "transaction-test-image")
         val groundTruth = File(context.noBackupFilesDir, "transaction-test-expected.json")
@@ -52,7 +53,7 @@ class TransactionScreenshotImportTest {
         if (live) assumeTrue("Live recognition credentials are missing", keyFile.isFile)
         val model = InstrumentationRegistry.getArguments().getString("transaction_model") ?: "test-vision"
         val uploaded = CompletableDeferred<ByteArray>()
-        val recognizer = if (live) KoogImageRecognizer() else KoogImageRecognizer {
+        val recognizer = if (live) KoogImageRecognizer(::liveRecognitionTransport) else KoogImageRecognizer {
             HttpClient(MockEngine { request ->
                 val body = request.body.toByteArray().decodeToString()
                 assertTrue(body.contains("transactionId"))
@@ -82,10 +83,25 @@ class TransactionScreenshotImportTest {
         val store = ViewModelStore()
         try {
             val repository = DefaultDataRepository(database)
-            val account = FundSource(id = repository.insertFundSource(FundSource(name = "Fixture Account")), name = "Fixture Account")
+            val currency = requireNotNull(com.storytellerf.summer.data.currencyCode(
+                InstrumentationRegistry.getArguments().getString("transaction_currency") ?: "CNY"))
+            val sourceId = repository.insertFundSource(FundSource(name = "Fixture Account", currency = currency))
+            val account = FundSource(id = sourceId, name = "Fixture Account", currency = currency)
             val encoder = RecognitionImageEncoder(context)
-            val analyzer = ConfiguredImageAnalyzer(settings, object : FinanceImageAnalyzer {
+            val configured = ConfiguredImageAnalyzer(settings, object : FinanceImageAnalyzer {
             }, { encoder.encode(it.toUri()) }, recognizer, FileRecognitionImageStore(images))
+            val recognitionFailure = CompletableDeferred<Throwable?>()
+            val analyzer = object : FinanceImageAnalyzer {
+                override suspend fun extractTransactionsFromImage(imageReference: String, target: LlmdTarget, currency: String?) =
+                    configured.extractTransactionsFromImage(imageReference, target, currency).also { result ->
+                        recognitionFailure.complete(result.exceptionOrNull())
+                        result.exceptionOrNull()?.let { error ->
+                            val connection = error as? RecognitionConnectionException
+                            android.util.Log.w("ScreenshotTest", "failure=${error.javaClass.simpleName} status=${connection?.statusCode} category=${connection?.category} origin=${error.stackTrace.firstOrNull()}")
+                        }
+                    }
+                override fun close() = configured.close()
+            }
             val viewModel = ImportTransactionsViewModel(repository, analyzer, flowOf(LlmdTarget.Release))
             store.put("import", viewModel)
             val saved = CompletableDeferred<Unit>()
@@ -93,6 +109,8 @@ class TransactionScreenshotImportTest {
             compose.runOnIdle { viewModel.selectFundSource(account); viewModel.recognize(image.toUri().toString()) }
             compose.waitUntil(120_000) { !viewModel.uiState.value.isAnalyzing && (viewModel.uiState.value.rows.isNotEmpty() || viewModel.uiState.value.error != null) }
             if (expected.isEmpty()) {
+                assertTrue("Expected an empty/mismatched-currency response, not a connection or image failure",
+                    recognitionFailure.await() is InvalidTransactionResponseException)
                 assertTrue(viewModel.uiState.value.rows.isEmpty())
                 assertNotNull(viewModel.uiState.value.error)
                 assertTrue(database.balanceImpactRecordDao().getInRange(null, null).isEmpty())
@@ -101,7 +119,7 @@ class TransactionScreenshotImportTest {
             }
             assertNull(viewModel.uiState.value.error)
             assertEquals(expected.size, viewModel.uiState.value.rows.size)
-            compose.onNodeWithText(formatSignedMoney(expected.first().amount)).performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText(formatSignedMoney(expected.first().amount, currency)).performScrollTo().assertIsDisplayed()
             if (expected.any { it.timestamp == null }) {
                 // Unknown screenshot dates must block persistence until the user supplies verified dates.
                 compose.onNodeWithText("Import selected transactions").performClick()
