@@ -4,6 +4,15 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class BalanceRecognitionTest {
+    @Test fun generatedJsonStillRequiresAllFieldsAndRejectsExtraFieldsAndWrongTypes() {
+        val targets = listOf(BalanceReadTarget(1, "Wallet", "Account balance"))
+        for (content in listOf(
+            """{"balances":[{"balance":10}]}""",
+            """{"balances":[{"fundSourceId":null,"balance":10,"label":null,"currency":null,"date":"2026-01-01"}]}""",
+            """{"balances":[{"fundSourceId":null,"balance":"ten","label":null,"currency":null}]}""",
+            """{"balances":[{"fundSourceId":null,"balance":"10","label":null,"currency":null}]}""",
+        )) assertThrows(InvalidBalancesResponseException::class.java) { parseBalances(content, targets) }
+    }
     @Test fun selectedCurrenciesArePreserved_andExplicitMismatchCannotBeAssigned() {
         val targets = listOf(BalanceReadTarget(1, "Dollar account", "Account balance", "USD"),
             BalanceReadTarget(2, "Euro account", "Account balance", "EUR"))

@@ -146,11 +146,16 @@ use the account's preceding balance at that time rather than the latest balance.
 `ImportTransactionsHost` owns recognition, LLMD authorization retry, editable preview,
 selection and batch persistence on the serial coordination dispatcher. Image recognition
 and database work run on IO; parsing and preview preparation run on worker dispatchers.
-Both LLMD and Koog require JSON Schema for transaction arrays with local ISO dates,
+Koog requests native JSON Schema; LLMD requests JSON through its text generation mode.
+Both use the same strict parser for transaction arrays with local ISO dates,
 signed amounts in the selected fund-source currency, notes and nullable original transaction IDs. The parser accepts a bare
 JSON object or one enclosing JSON code fence from a model; surrounding prose and malformed
 payloads are rejected. Complete local dates may omit leading zeroes, but must include
 the year, month, day, hour, minute and second and pass strict calendar validation.
+New requests copy the literal screenshot date into `dateText` and keep `timestamp` null.
+The app parses complete numeric, Chinese and English-month dates; relative or incomplete
+evidence stays null even if the model also supplies an invented timestamp. The field is
+transient and does not change the database. Older five-field responses/fixtures remain readable.
 Missing/relative dates stay null in recognition and must be completed
 in the preview before saving. Missing IDs stay null;
 they are never synthesized from dates or amounts. Both balance and transaction recognition save the exact compressed JPEG through
@@ -338,28 +343,43 @@ Android main dispatcher; Host coordination continues on the injected serial work
 ## Physical-device verification (2026-10-13)
 
 With Gradle 9.8.1, AGP 9.1.1, Ktor 3.6.0 and OkHttp 5.5.0, Debug/Alpha/Release builds,
-Android Lint and 62 unit tests passed. On Android 15, 25 standard device tests passed;
-two opt-in tests were skipped and run separately. All three public screenshot integrations
-passed with mock responses, including manual correction of missing dates and retained image bytes.
+Android Lint and 65 unit tests passed. The standard Android 15 physical-device suite passed
+25 tests, with two opt-in tests skipped and exercised separately. Mock screenshot journeys
+verify compression, preview/manual correction, persistence, retained images and deduplication;
+they do not establish model accuracy.
 
-Real OpenRouter calls with `google/gemini-2.5-flash-lite` passed Cashew's USD balance
-(-41.54), the five Alipay relative-date transactions and the Sylq EUR-to-CNY exclusion.
-The original Alipay detail prompt failed because the model reconstructed a blurred order ID.
-Experimental field-by-field prompts improved blurred-ID recognition, including three consecutive
-detail passes, but regressed on the relative-date list by inventing a year. They were not promoted;
-the existing production prompt is retained. Screenshot tests now check dates before manual correction,
-so fabricated dates cannot be hidden by the subsequent persistence journey.
-LLMD Debug with the installed Gemma model initialized its GPU after the readiness fix,
-but transaction dates and synthetic/Cashew balance JSON assertions still failed. Source inspection
-found LLMD's LiteRT-LM adapter treating incremental chunks as cumulative text: consecutive identical
-chunks lose characters (for example, 11 becomes 1), and its blank-chunk fallback can corrupt JSON.
-The separate LLMD fix was compiled with `scripts/check-static.sh --android-kotlin`, packaged
-as an arm64 Debug APK using the existing unchanged Rust library, and installed in place.
-Three post-fix device checks returned parseable JSON: the synthetic transaction had the correct
-amount but a null date, while synthetic and Cashew balances returned empty arrays (`row_count`).
-All three ground-truth assertions remain failures. The fix preserves incremental chunks; it does
-not establish the installed model's screenshot accuracy. No dependency versions were changed.
-These live failures remain failures; mock integration success does not establish model accuracy.
+LLMD's separate LiteRT-LM adapter incorrectly stripped repeated incremental chunks and
+replaced blank chunks with rendered content. Local LLMD commit `0885c4d` preserves the SDK
+chunks. It passed `scripts/check-static.sh --android-kotlin`; the arm64 Debug APK was packaged
+using the existing unchanged Rust library and installed in place, preserving the model.
+
+Same-image, same-prompt A/B calls isolated the subsequent empty balances/missing dates to
+LLMD's structured generation path: original and short balance prompts returned an empty array
+with JSON Schema but the correct -245.70 without guided decoding. Generic `json_object` also
+failed. Both transaction prompts without guided decoding preserved the full date, amount and ID.
+This path also changes LiteRT-LM's thinking configuration, so the experiment does not isolate
+grammar constraints from disabled thinking or establish an SDK-wide defect.
+
+LLMD now explicitly uses `response_format: {"type":"text"}` with JSON-only prompting and
+strict application parsing. Missing business fields, extra fields, quoted numeric amounts,
+invalid account assignments and explicit currency mismatches are rejected. Koog/API providers
+retain native JSON Schema. Both providers share the balance and transaction prompts.
+
+Transaction requests copy literal date evidence into `dateText`; the app formats complete
+numeric/Chinese/English-month dates. Relative or incomplete evidence stays null even if an
+invented `timestamp` is supplied. Older five-field payloads remain readable. No database schema
+or dependency versions changed. Balance prompts read numbers before account assignment and
+retain readable values when platform names or currency symbols are missing.
+
+LLMD Debug passed full preview/persistence journeys for the clear transaction (including
+2018-11-05T10:59:00 and TEST-001), the clear balance (-245.70) and Cashew USD balance (-41.54).
+Gemini 2.5 Flash Lite passed Cashew's USD balance and the five-row relative-date/manual-correction
+journey twice with the new date-evidence contract. EUR-to-CNY exclusion passed on both providers.
+
+Remaining accuracy failures: complex LLMD transaction lists still failed currency classification
+or row coverage, and both models sometimes reconstructed blurred IDs despite the prompt.
+Those strict assertions remain failures. No failed live assertion is counted as a pass, and
+successful fixtures do not guarantee arbitrary-image accuracy.
 
 Balance timestamps come from original image creation metadata (or the current-time fallback),
 with manual edits preserved. Transaction timestamps come from screenshot text and remain editable

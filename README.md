@@ -55,7 +55,9 @@ Open **Settings → Image recognition** to choose **LLMD**, **OpenAI**, **Anthro
 For an API provider, enter its HTTPS **API base URL** (including the version path, such as
 `https://openrouter.ai/api/v1`), a **model ID** supporting images and JSON Schema, and your **API key**, then tap
 **Save recognition settings**. OpenAI connections can use Responses API or Chat Completions.
-All recognition requests require native JSON Schema output; unsupported models fail without a plain-text fallback.
+API providers require native JSON Schema output; unsupported API models fail without a plain-text fallback.
+LLMD uses JSON-only prompting with strict validation in the app, because the installed Gemma model
+omits readable values in LiteRT-LM's guided generation mode. Malformed or incomplete results are rejected.
 This version supports API keys; account/subscription login is not included.
 
 Each provider keeps its own saved connection. API keys are encrypted on the device and excluded

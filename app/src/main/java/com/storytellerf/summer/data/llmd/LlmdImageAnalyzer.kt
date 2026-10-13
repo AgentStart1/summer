@@ -5,11 +5,9 @@ import com.storytellerf.summer.data.recognition.FileRecognitionImageStore
 import com.storytellerf.summer.data.recognition.BalanceReadTarget
 import com.storytellerf.summer.data.recognition.RecognizedBalances
 import com.storytellerf.summer.data.recognition.balancesPrompt
-import com.storytellerf.summer.data.recognition.BALANCES_RESPONSE_SCHEMA
 import com.storytellerf.summer.data.recognition.parseBalances
 import com.storytellerf.summer.data.recognition.RecognizedTransactions
 import com.storytellerf.summer.data.recognition.transactionsPrompt
-import com.storytellerf.summer.data.recognition.TRANSACTION_RESPONSE_SCHEMA
 import com.storytellerf.summer.data.recognition.parseTransactions
 import com.storytellerf.summer.data.recognition.imageHash
 import com.storytellerf.summer.data.recognition.FinanceImageAnalyzer
@@ -111,8 +109,9 @@ internal fun buildBalancesExtractionRequest(imageUrl: String, targets: List<Bala
     put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", JSONArray()
         .put(JSONObject().put("type", "text").put("text", balancesPrompt(targets)))
         .put(JSONObject().put("type", "image_url").put("image_url", JSONObject().put("url", imageUrl))))))
-    put("response_format", JSONObject().put("type", "json_schema").put("json_schema", JSONObject()
-        .put("name", "balances_extraction").put("strict", true).put("schema", JSONObject(BALANCES_RESPONSE_SCHEMA))))
+    // LiteRT-LM's guided generation drops readable values with the installed Gemma model.
+    // The shared prompt requests JSON; parseBalances still enforces the complete field contract.
+    put("response_format", JSONObject().put("type", "text"))
 }.toString()
 
 class LlmdAuthorizationException :
@@ -127,8 +126,8 @@ internal fun buildTransactionExtractionRequest(imageUrl: String, currency: Strin
             .put(JSONObject().put("type", "text").put("text", transactionsPrompt(currency)))
             .put(JSONObject().put("type", "image_url").put("image_url", JSONObject().put("url", imageUrl))))
     }))
-    put("response_format", JSONObject().put("type", "json_schema").put("json_schema", JSONObject()
-        .put("name", "transaction_extraction").put("strict", true).put("schema", JSONObject(TRANSACTION_RESPONSE_SCHEMA))))
+    // Keep screenshot reasoning available; parseTransactions rejects malformed output.
+    put("response_format", JSONObject().put("type", "text"))
 }.toString()
 
 internal fun extractResponseContent(responseJson: String): String {

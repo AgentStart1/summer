@@ -17,8 +17,8 @@ class LlmdResponseFormatTest {
         assertEquals(uri, content.getJSONObject(1).getJSONObject("image_url").getString("url"))
         assertTrue(content.getJSONObject(0).getString("text").contains("Available balance"))
         assertTrue(content.getJSONObject(0).getString("text").contains("USD"))
-        assertTrue(request.getJSONObject("response_format").getJSONObject("json_schema")
-            .getJSONObject("schema").getJSONObject("properties").has("balances"))
+        assertEquals("text", request.getJSONObject("response_format").getString("type"))
+        assertTrue(content.getJSONObject(0).getString("text").contains("fundSourceId"))
     }
 
     @Test fun serviceErrorsRemainActionable_andAuthorizationStillRequestsConsent() {
@@ -31,16 +31,13 @@ class LlmdResponseFormatTest {
     }
 
     @Test
-    fun transactionRequestRequiresOriginalTransactionId_andStrictSchema() {
+    fun transactionRequestRequestsOriginalTransactionId_withoutGuidedGeneration() {
         val request = JSONObject(buildTransactionExtractionRequest("content://test/image.jpg", "EUR"))
         assertTrue(request.getJSONArray("messages").getJSONObject(0).getJSONArray("content")
             .getJSONObject(0).getString("text").contains("selected account currency is EUR"))
-        val schema = request.getJSONObject("response_format").getJSONObject("json_schema")
-        assertTrue(schema.getBoolean("strict"))
-        val row = schema.getJSONObject("schema").getJSONObject("properties")
-            .getJSONObject("transactions").getJSONObject("items")
-        assertTrue(row.getJSONArray("required").toString().contains("transactionId"))
-        assertTrue(row.getJSONObject("properties").has("transactionId"))
+        assertEquals("text", request.getJSONObject("response_format").getString("type"))
+        assertTrue(request.getJSONArray("messages").getJSONObject(0).getJSONArray("content")
+            .getJSONObject(0).getString("text").contains("transactionId"))
     }
 
 }

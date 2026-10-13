@@ -5,6 +5,29 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class TransactionRecognitionTest {
+    @Test fun copiedDateEvidenceOverridesGeneratedDates_andNeverCompletesRelativeDates() {
+        val zone = TimeZone.getTimeZone("UTC")
+        for (date in listOf("今天 10:59", "昨天", "TODAY", "10:59", "11-05", null)) {
+            val evidence = date?.let { "\"$it\"" } ?: "null"
+            val rows = parseTransactions("""{"transactions":[{"timestamp":"2023-10-27T10:59:00","dateText":$evidence,"amount":-20.7,"note":null,"transactionId":null,"currency":null}]}""", zone)
+            assertNull(rows.single().timestamp)
+        }
+        for (date in listOf("2018-11-05 10:59", "2018年11月05日 10:59:00", "2018/11/05T10:59:00", "Nov 5, 2018 10:59")) {
+            assertEquals(parseLocalDateTime("2018-11-05T10:59:00", zone), parseScreenshotDate(date, zone))
+        }
+        val copied = parseTransactions("""{"transactions":[{"timestamp":"2023-10-27T10:59:00","dateText":"2018-11-05 10:59","amount":-20.7,"note":null,"transactionId":null,"currency":null}]}""", zone)
+        assertEquals(parseLocalDateTime("2018-11-05T10:59:00", zone), copied.single().timestamp)
+        assertEquals(parseLocalDateTime("2018-11-05T00:00:00", zone), parseScreenshotDate("2018-11-05", zone))
+        assertNull(parseScreenshotDate("2018-02-30 10:59", zone))
+    }
+    @Test fun generatedJsonStillRequiresAllFieldsAndRejectsExtraFieldsAndWrongTypes() {
+        for (content in listOf(
+            """{"transactions":[{"amount":10}]}""",
+            """{"transactions":[{"timestamp":null,"amount":10,"note":null,"transactionId":null,"currency":null,"confidence":1}]}""",
+            """{"transactions":[{"timestamp":null,"amount":"ten","note":null,"transactionId":null,"currency":null}]}""",
+            """{"transactions":[{"timestamp":null,"amount":"10","note":null,"transactionId":null,"currency":null}]}""",
+        )) assertThrows(InvalidTransactionResponseException::class.java) { parseTransactions(content) }
+    }
     @Test fun mixedCurrenciesKeepSelectedAndUndeterminedRows_inVisibleOrder() {
         val content = """{"transactions":[
             {"timestamp":null,"amount":-10,"note":"Selected","transactionId":"USD-1","currency":"usd"},
