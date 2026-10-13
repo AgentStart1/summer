@@ -77,24 +77,33 @@ class LlmdServiceConnection(context: Context) {
         }
     }
 
-    private suspend fun awaitEngineReady(target: LlmdTarget) {
-        val ready = withTimeoutOrNull(REQUEST_TIMEOUT_MILLIS) {
-            while (true) {
-                val response = JSONObject(health(target))
-                response.optJSONObject("error")?.let { error ->
-                    if (error.optString("type") == "authorization_required") throw LlmdAuthorizationException()
-                    throw llmdRecognitionError(error.optString("type"), error.optString("message"))
-                }
-                // Older LLMD builds initialize synchronously and omit engineReady.
-                if (!response.has("engineReady") || response.getBoolean("engineReady")) return@withTimeoutOrNull true
-                if (response.optString("engineState") == "error") {
-                    throw llmdRecognitionError("llmd_error", response.optString("engineError"))
-                }
-                delay(500)
-            }
+    suspend fun activeModel(target: LlmdTarget): String {
+        val response = awaitEngineReady(target)
+        if (response.isNull("activeModel") || response.optString("activeModel").isBlank()) {
+            throw LlmdRecognitionException("Select and start a model in LLMD; no active model was reported")
         }
-        if (ready != true) {
-            throw LlmdRecognitionException("LLMD engine initialization timed out; check model status in LLMD and try again")
+        return response.getString("activeModel")
+    }
+
+    private suspend fun awaitEngineReady(target: LlmdTarget): JSONObject =
+        withTimeoutOrNull(REQUEST_TIMEOUT_MILLIS) { pollEngineReady(target) }
+            ?: throw LlmdRecognitionException("LLMD engine initialization timed out; check model status in LLMD and try again")
+
+    private suspend fun pollEngineReady(target: LlmdTarget): JSONObject {
+        while (true) {
+            val response = JSONObject(health(target))
+            response.optJSONObject("error")?.let { error ->
+                if (error.optString("type") == "authorization_required") throw LlmdAuthorizationException()
+                throw llmdRecognitionError(error.optString("type"), error.optString("message"))
+            }
+            if (response.has("serviceEnabled") && !response.getBoolean("serviceEnabled") && response.optString("engineState") != "error") {
+                throw LlmdRecognitionException("LLMD service is off; open LLMD, choose a model and switch the service on")
+            }
+            if (!response.has("engineReady") || response.getBoolean("engineReady")) return response
+            if (response.optString("engineState") == "error") {
+                throw llmdRecognitionError("llmd_error", response.optString("engineError"))
+            }
+            delay(500)
         }
     }
 

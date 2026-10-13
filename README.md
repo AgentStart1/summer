@@ -78,6 +78,9 @@ Each fund source has an ISO currency code, editable in Settings → Accounts (de
 
 The choice is saved on device. Debug builds default to LLMD Debug; non-debug builds default to
 LLMD Release until a different package is selected.
+In LLMD, choose an imported model and switch its model service on. Wait for Ready before
+recognizing an image. Summer uses that service's active model; it never chooses a default
+model or falls back to another one. If the service is Off, open LLMD to enable it.
 
 Debug, alpha and release builds can be installed together. Each keeps its own balances,
 transactions, saved images and recognition settings.

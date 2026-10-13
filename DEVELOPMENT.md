@@ -328,10 +328,15 @@ preview and persistence assertions against the installed LLMD model over Binder 
 For the transaction runner, use this instead of `--live`.
 Authorize `com.storytellerf.summer.debug` in that LLMD build before running; a missing
 model, authorization failure or recognition error fails the test.
+In LLMD, explicitly select an imported model and turn the model service on before running.
+Summer uses the actual `activeModel` reported by the ready service. It has no hardcoded
+LLMD model, first-model selection, or model fallback. An Off service fails immediately with
+instructions to open LLMD; binding and health checks must not start an engine.
 
 LLMD recognition holds its Binder connection while polling engine health before sending
 the image. Asynchronous model initialization may take up to 120 seconds; initialization
-errors fail immediately. Older LLMD builds without `engineReady` keep their synchronous flow.
+errors fail immediately. A ready service must also report a nonblank `activeModel`;
+older LLMD builds without that field need updating.
 
 Production coroutine core/Android and coroutine test artifacts share the catalog version.
 Keep them aligned: instrumentation executes against the app APK's coroutine runtime,
@@ -380,6 +385,34 @@ Remaining accuracy failures: complex LLMD transaction lists still failed currenc
 or row coverage, and both models sometimes reconstructed blurred IDs despite the prompt.
 Those strict assertions remain failures. No failed live assertion is counted as a pass, and
 successful fixtures do not guarantee arbitrary-image accuracy.
+
+The subsequent LLMD service-control build removes implicit model initialization and all
+default model IDs. Its full E4B vision model imported successfully and initialized its GPU
+language engine, but the first image request triggered Android's low-memory killer while
+preparing vision (about 3.6 GB process RSS on the 6 GB device). That E4B image test failed;
+no model/backend fallback was used. The opt-in Off-state Binder contract test passed exact
+inventory, missing/blank/unknown models, valid models while Off, and rebinding without loading.
+Run it with `llmd_service_state=off`, `llmd_target=debug`, and a comma-separated
+`llmd_model_ids` inventory. The Ready-state variant additionally requires `llmd_active_model`.
+`llmd_text_probe=true` enables two text requests with a disconnect between them; it is
+independent of image accuracy checks.
+The Ready-state contract also passed with E4B: mismatched requests failed, and client
+disconnect/rebind retained the same active model without another initialization.
+The all-GPU E4B build also failed its first text request while preparing vision. LLMD then
+kept language on GPU, fixed vision to CPU, and prepared modality executors before Ready.
+Two text calls passed with the same E4B model across a client disconnect; logs showed
+one initialization and generation durations of 5.8 and 4.5 seconds. Model weights,
+dependency versions, and context limits were unchanged.
+The actual order image still triggered low-memory termination with fixed CPU vision.
+E4B image recognition remains a failure on this device, with no extracted date/amount
+accuracy claim and no automatic switch to E2B or another provider.
+Switching LLMD off released its engine (about 3.66 GB to 172 MB process PSS), and
+the Off-state Binder contract passed again afterwards.
+LLMD's Appium import-only flow passed importing E4B, explicit selection, and service
+readiness. Its separate Binder/text assertions do not claim image generation coverage.
+The final standard physical-device report contains 29 cases: 25 passed and four opt-in
+cases skipped. The LLMD contract/text opt-ins were run separately; failed E4B image calls
+are recorded above rather than counted as standard-suite passes.
 
 Balance timestamps come from original image creation metadata (or the current-time fallback),
 with manual edits preserved. Transaction timestamps come from screenshot text and remain editable

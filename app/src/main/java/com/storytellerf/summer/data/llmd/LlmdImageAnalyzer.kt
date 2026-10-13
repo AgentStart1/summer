@@ -34,13 +34,13 @@ class LlmdImageAnalyzer(
     private val imageStore: RecognitionImageStore = FileRecognitionImageStore(context.applicationContext.filesDir),
 ) : FinanceImageAnalyzer {
     override suspend fun extractBalancesFromImage(imageReference: String, targets: List<BalanceReadTarget>, target: LlmdTarget): Result<RecognizedBalances> =
-        analyzeImage(imageReference, target, { buildBalancesExtractionRequest(it, targets) }) { response, image ->
+        analyzeImage(imageReference, target, { uri, model -> buildBalancesExtractionRequest(uri, targets, model) }) { response, image ->
             RecognizedBalances(parseBalances(extractResponseContent(response), targets), imageStore.save(image.jpeg))
         }
     private val appContext = context.applicationContext
 
     override suspend fun extractTransactionsFromImage(imageReference: String, target: LlmdTarget, currency: String?): Result<RecognizedTransactions> =
-        analyzeImage(imageReference, target, { buildTransactionExtractionRequest(it, currency) }) { response, image ->
+        analyzeImage(imageReference, target, { uri, model -> buildTransactionExtractionRequest(uri, model, currency) }) { response, image ->
             val records = parseTransactions(extractResponseContent(response), currency = currency)
             RecognizedTransactions(image.hash, records, imageStore.save(image.jpeg))
         }
@@ -48,7 +48,7 @@ class LlmdImageAnalyzer(
     private suspend fun <T> analyzeImage(
         imageReference: String,
         target: LlmdTarget,
-        buildRequest: (String) -> String,
+        buildRequest: (String, String) -> String,
         parse: (String, PreparedImage) -> T,
     ): Result<T> {
         var preparedImage: PreparedImage? = null
@@ -56,7 +56,7 @@ class LlmdImageAnalyzer(
             val image = withContext(ioDispatcher) { prepareImage(imageReference.toUri()) }
             preparedImage = image
             appContext.grantUriPermission(target.packageName, image.uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            val response = serviceConnection.chatCompletion(target, buildRequest(image.uri.toString()))
+            val response = serviceConnection.chatCompletion(target, buildRequest(image.uri.toString(), serviceConnection.activeModel(target)))
             withContext(ioDispatcher) { Result.success(parse(response, image)) }
         } catch (error: CancellationException) {
             throw error
@@ -101,10 +101,8 @@ private data class PreparedImage(
     val jpeg: ByteArray,
 )
 
-private const val MODEL_NAME = "gemma-4-E2B-it"
-
-internal fun buildBalancesExtractionRequest(imageUrl: String, targets: List<BalanceReadTarget>): String = JSONObject().apply {
-    put("model", MODEL_NAME)
+internal fun buildBalancesExtractionRequest(imageUrl: String, targets: List<BalanceReadTarget>, model: String): String = JSONObject().apply {
+    put("model", model)
     put("max_tokens", 8192)
     put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", JSONArray()
         .put(JSONObject().put("type", "text").put("text", balancesPrompt(targets)))
@@ -117,8 +115,8 @@ internal fun buildBalancesExtractionRequest(imageUrl: String, targets: List<Bala
 class LlmdAuthorizationException :
     Exception("Authorization required. Please authorize the app in llmd.")
 
-internal fun buildTransactionExtractionRequest(imageUrl: String, currency: String? = null): String = JSONObject().apply {
-    put("model", MODEL_NAME)
+internal fun buildTransactionExtractionRequest(imageUrl: String, model: String, currency: String? = null): String = JSONObject().apply {
+    put("model", model)
     put("max_tokens", 8192)
     put("messages", JSONArray().put(JSONObject().apply {
         put("role", "user")
