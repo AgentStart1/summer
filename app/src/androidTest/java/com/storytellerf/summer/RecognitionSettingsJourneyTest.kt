@@ -58,7 +58,7 @@ class RecognitionSettingsJourneyTest {
             compose.onNodeWithText("Save recognition settings").performScrollTo().performClick()
             waitForSave()
             compose.onNodeWithText("Recognition settings saved").assertIsDisplayed()
-            compose.onNodeWithText("LLMD build").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("LLMD apps").performScrollTo().assertIsDisplayed()
             compose.onNodeWithContentDescription("Back").performClick()
             compose.onNodeWithContentDescription("Settings").performClick()
             compose.onNodeWithText("Image recognition").performClick()

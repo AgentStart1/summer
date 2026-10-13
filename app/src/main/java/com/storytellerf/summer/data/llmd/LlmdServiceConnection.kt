@@ -70,6 +70,10 @@ class LlmdServiceConnection(context: Context) {
         }
     }
 
+    suspend fun models(target: LlmdTarget): String = requestIpc(target) { callback ->
+        requireService(target).listModelsAsync(callback)
+    }
+
     suspend fun chatCompletion(target: LlmdTarget, requestJson: String): String {
         awaitEngineReady(target)
         return requestIpc(target) { callback ->

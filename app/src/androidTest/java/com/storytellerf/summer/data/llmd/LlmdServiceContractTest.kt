@@ -84,6 +84,12 @@ class LlmdServiceContractTest {
             val ids = (0 until models.length()).map { models.getJSONObject(it).getString("id") }.toSet()
             val expectedIds = requireNotNull(args.getString("llmd_model_ids")).split(',').toSet()
             assertEquals(expectedIds, ids)
+            val status = AndroidLlmdStatusReader(context).read(target)
+            assertTrue(status is LlmdStatus.Available)
+            status as LlmdStatus.Available
+            assertEquals(expectedState, status.service.value)
+            assertEquals(expectedIds, status.models.toSet())
+            assertEquals(expectedModel, status.activeModel)
             val invalidModels = mutableListOf<String?>(null, "", "missing-test-model")
             invalidModels.addAll(ids.filter { expectedState == "off" || it != expectedModel })
             for (model in invalidModels) {

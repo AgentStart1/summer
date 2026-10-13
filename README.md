@@ -81,6 +81,11 @@ LLMD Release until a different package is selected.
 In LLMD, choose an imported model and switch its model service on. Wait for Ready before
 recognizing an image. Summer uses that service's active model; it never chooses a default
 model or falls back to another one. If the service is Off, open LLMD to enable it.
+Settings → Image recognition shows Release, Alpha and Debug separately: installation,
+authorization for this Summer app, service state, running model and imported models.
+Use each build's Authorize/Open buttons as needed. Status refreshes while the page is
+visible and after returning from LLMD. Older LLMD builds that load models during status
+queries show an update notice and unknown authorization/model information instead.
 
 Debug, alpha and release builds can be installed together. Each keeps its own balances,
 transactions, saved images and recognition settings.

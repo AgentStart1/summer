@@ -347,6 +347,34 @@ Android main dispatcher; Host coordination continues on the injected serial work
 
 ## Physical-device verification (2026-10-13)
 
+### LLMD status by build
+
+`LlmdStatusHost` coordinates independent Release/Alpha/Debug snapshots and launch effects
+on the injected serial dispatcher. `AndroidLlmdStatusReader` checks package metadata and
+reads health/model inventory on the IO worker, using one temporary Binder connection per
+build. It never selects a model or calls generation. The explicit private model service is
+the capability marker for read-only status IPC; older builds are not bound because their
+health handler can initialize a model. Their authorization/model state remains unknown.
+
+The settings UI refreshes every five seconds while its LLMD section is resumed, stops
+on pause/disposal, and refreshes after authorization returns. Cancelled reads cannot
+publish stale results. Authorization comes from actual IPC responses, not an Activity
+result code. A missing active-model report never becomes the first imported model.
+
+68 unit tests and the standard physical suite passed (32 cases: 28 passed, four opt-in
+skips). Tests cover per-build isolation, worker selection, errors, cancellation/resume,
+effect routing, missing model reports, and rendering all three builds. The installed
+Debug reader also passed the opt-in Off-state inventory/no-load contract.
+
+Physical settings checks showed Release requiring an update, Alpha not installed, and
+Debug authorized with the actual E2B/E4B inventory. Explicit E4B startup updated Summer
+to Ready with E4B as the running model; shutdown updated it to Off with no running model.
+Legacy processes were not started by inspection. A locally signed minified Summer Alpha
+test build showed authorization required, opened the correct LLMD Debug consent screen,
+and stayed unauthorized after cancellation; that temporary test app was removed.
+
+### Earlier recognition validation
+
 With Gradle 9.8.1, AGP 9.1.1, Ktor 3.6.0 and OkHttp 5.5.0, Debug/Alpha/Release builds,
 Android Lint and 65 unit tests passed. The standard Android 15 physical-device suite passed
 25 tests, with two opt-in tests skipped and exercised separately. Mock screenshot journeys

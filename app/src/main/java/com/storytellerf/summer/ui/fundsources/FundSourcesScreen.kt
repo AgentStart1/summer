@@ -206,7 +206,7 @@ private fun FundSourcesContent(
         if (showRecognition) {
             item {
                 RecognitionSettingsCard(recognitionViewModel) {
-                    LlmdBuildSelector(selectedLlmdTarget, onSelectLlmdTarget)
+                    com.storytellerf.summer.ui.recognition.LlmdStatusOptions(selectedLlmdTarget, onSelectLlmdTarget)
                 }
             }
         } else {
@@ -214,20 +214,6 @@ private fun FundSourcesContent(
             if (fundSources.isEmpty()) item { EmptyFundSourcesCard() }
             else items(fundSources, key = { it.id }) { source ->
                 FundSourceItem(source, onEdit = { onEdit(source) }, onDelete = { onDelete(source) })
-            }
-        }
-    }
-}
-
-@Composable
-private fun LlmdBuildSelector(selectedTarget: LlmdTarget, onSelectTarget: (LlmdTarget) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("LLMD build", style = MaterialTheme.typography.labelLarge)
-        Text("Choose the LLMD app installed on this device.", style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            LlmdTarget.entries.forEach { target ->
-                FilterChip(selected = selectedTarget == target, onClick = { onSelectTarget(target) }, label = { Text(target.displayName) })
             }
         }
     }
