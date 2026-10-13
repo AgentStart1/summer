@@ -9,7 +9,7 @@ plugins {
 
 android {
     namespace = "com.storytellerf.summer"
-    compileSdk = 36
+    compileSdk { version = release(37) }
 
     signingConfigs {
         val signPath = System.getenv("storyteller_f_sign_path")
@@ -114,6 +114,7 @@ dependencies {
   implementation(libs.koog.anthropic)
   implementation(libs.koog.openrouter)
   implementation(libs.koog.http.ktor)
+  implementation(platform(libs.ktor.bom))
   implementation(libs.ktor.client.okhttp)
 
   implementation(libs.kotlinx.coroutines.core)

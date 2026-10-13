@@ -1,7 +1,11 @@
 # Development
 
-Use JDK 17, Android SDK platform 36, and an Android emulator or USB-connected physical device. The Gradle wrapper downloads
+Use JDK 17, Android SDK platform 37, and an Android emulator or USB-connected physical device. The Gradle wrapper downloads
 the required Gradle version.
+
+Ktor 3.6 uses OkHttp 5.5, whose Android artifact requires compileSdk 37.
+The Ktor BOM aligns Koog's transitive content-negotiation and serialization artifacts
+with the transport version.
 
 ```sh
 ./gradlew :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug
