@@ -15,20 +15,22 @@ internal fun parseBalances(content: String, targets: List<BalanceReadTarget>): L
     val json = Regex("\\A```(?:json)?\\s*\\n([\\s\\S]*?)\\n```\\z", RegexOption.IGNORE_CASE)
         .matchEntire(trimmed)?.groupValues?.get(1) ?: trimmed
     val values = Json.decodeFromString<BalancePayload>(json).balances
-    require(values.size in 1..50)
+    require(values.size in 1..50) { "row_count" }
     val allowed = targets.map { it.fundSourceId }.toSet()
     values.map {
-        require(it.balance.isFinite() && (it.fundSourceId == null || it.fundSourceId in allowed))
+        require(it.balance.isFinite()) { "amount" }
+        require(it.fundSourceId == null || it.fundSourceId in allowed) { "account_id" }
         val currency = it.currency?.uppercase(java.util.Locale.ROOT)
-        require(currency == null || targets.any { target -> target.currency == currency })
-        require(it.fundSourceId == null || currency == null || targets.single { target -> target.fundSourceId == it.fundSourceId }.currency == currency)
+        require(currency == null || targets.any { target -> target.currency == currency }) { "currency" }
+        require(it.fundSourceId == null || currency == null || targets.single { target -> target.fundSourceId == it.fundSourceId }.currency == currency) { "account_currency" }
         RecognizedAccountBalance(it.fundSourceId, it.balance, it.label?.trim()?.takeIf(String::isNotEmpty), currency)
     }
-} catch (_: Exception) {
-    throw InvalidBalancesResponseException()
+} catch (error: Exception) {
+    throw InvalidBalancesResponseException(error.message?.takeIf { it in setOf("row_count", "amount", "account_id", "currency", "account_currency") }
+        ?: error.javaClass.simpleName)
 }
 
-class InvalidBalancesResponseException : Exception("No requested balances were recognized. Check the selected accounts and balance labels.")
+class InvalidBalancesResponseException(val failureType: String? = null) : Exception("No requested balances were recognized. Check the selected accounts and balance labels.")
 
 internal fun balancesPrompt(targets: List<BalanceReadTarget>): String {
     require(targets.size in 1..30 && targets.map { it.fundSourceId }.distinct().size == targets.size)

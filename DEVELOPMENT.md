@@ -344,9 +344,16 @@ passed with mock responses, including manual correction of missing dates and ret
 
 Real OpenRouter calls with `google/gemini-2.5-flash-lite` passed Cashew's USD balance
 (-41.54), the five Alipay relative-date transactions and the Sylq EUR-to-CNY exclusion.
-The Alipay detail assertion still failed because the model reconstructed a blurred order ID.
+The original Alipay detail prompt failed because the model reconstructed a blurred order ID.
+Experimental field-by-field prompts improved blurred-ID recognition, including three consecutive
+detail passes, but regressed on the relative-date list by inventing a year. They were not promoted;
+the existing production prompt is retained. Screenshot tests now check dates before manual correction,
+so fabricated dates cannot be hidden by the subsequent persistence journey.
 LLMD Debug with the installed Gemma model initialized its GPU after the readiness fix,
-but transaction date accuracy and the synthetic/Cashew balance assertions still failed.
+but transaction dates and synthetic/Cashew balance JSON assertions still failed. Source inspection
+found LLMD's LiteRT-LM adapter treating incremental chunks as cumulative text: consecutive identical
+chunks lose characters (for example, 11 becomes 1), and its blank-chunk fallback can corrupt JSON.
+The separate LLMD fix has been prepared but has not been installed or verified on-device.
 These live failures remain failures; mock integration success does not establish model accuracy.
 
 Balance timestamps come from original image creation metadata (or the current-time fallback),

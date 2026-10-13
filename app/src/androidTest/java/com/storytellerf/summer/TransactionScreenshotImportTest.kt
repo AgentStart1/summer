@@ -135,6 +135,10 @@ class TransactionScreenshotImportTest {
             assertEquals(expected.size, viewModel.uiState.value.rows.size)
             assertEquals("Recognized amounts must match the manually checked screenshot",
                 expected.map { it.amount }.sorted(), viewModel.uiState.value.rows.map { it.amount.toDouble() }.sorted())
+            expected.sortedBy { it.amount }.zip(viewModel.uiState.value.rows.sortedBy { it.amount.toDouble() }).forEach { (truth, row) ->
+                assertEquals("Recognized dates must match screenshot evidence before manual correction",
+                    truth.timestamp?.let { formatLocalDateTime(it) }.orEmpty(), row.date)
+            }
             compose.waitUntil(10_000) {
                 compose.onAllNodesWithText(formatSignedMoney(expected.first().amount, currency)).fetchSemanticsNodes().isNotEmpty()
             }

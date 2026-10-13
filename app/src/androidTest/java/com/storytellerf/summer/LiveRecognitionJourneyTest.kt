@@ -24,6 +24,9 @@ import com.storytellerf.summer.data.recognition.KoogImageRecognizer
 import com.storytellerf.summer.data.recognition.RemoteImageRecognizer
 import com.storytellerf.summer.data.recognition.RecognitionBackend
 import com.storytellerf.summer.data.recognition.configuredImageAnalyzer
+import com.storytellerf.summer.data.recognition.FinanceImageAnalyzer
+import com.storytellerf.summer.data.recognition.BalanceReadTarget
+import com.storytellerf.summer.data.recognition.InvalidBalancesResponseException
 import com.storytellerf.summer.theme.SummerAppTheme
 import com.storytellerf.summer.ui.addbalance.AddBalanceChangeScreen
 import com.storytellerf.summer.ui.addbalance.AddBalanceChangeViewModel
@@ -121,9 +124,19 @@ class LiveRecognitionJourneyTest {
                 if (inputImage == null) createSyntheticScreenshot(image)
             }
             lateinit var viewModel: AddBalanceChangeViewModel
+            val configured = configuredImageAnalyzer(context, remote = recognizer)
+            val analyzer = object : FinanceImageAnalyzer {
+                override suspend fun extractBalancesFromImage(imageReference: String, targets: List<BalanceReadTarget>, target: LlmdTarget) =
+                    configured.extractBalancesFromImage(imageReference, targets, target).also { result ->
+                        result.exceptionOrNull()?.let { error ->
+                            android.util.Log.w("BalanceScreenshotTest", "failure=${error.javaClass.simpleName} parser=${(error as? InvalidBalancesResponseException)?.failureType}")
+                        }
+                    }
+                override fun close() = configured.close()
+            }
             compose.runOnUiThread {
                 viewModel = ViewModelProvider(compose.activity, AddBalanceChangeViewModel.Factory(
-                    DefaultDataRepository(database), configuredImageAnalyzer(context, remote = recognizer),
+                    DefaultDataRepository(database), analyzer,
                     llmdTarget?.let { flowOf(it) } ?: DataStoreLlmdTargetSettings(context).selectedTarget,
                 ))[AddBalanceChangeViewModel::class.java]
                 compose.activity.setContent {
