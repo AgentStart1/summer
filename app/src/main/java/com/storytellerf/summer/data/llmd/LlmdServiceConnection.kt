@@ -14,10 +14,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
+import org.json.JSONObject
 
 class LlmdServiceConnection(context: Context) {
     private val appContext = context.applicationContext
@@ -68,8 +71,30 @@ class LlmdServiceConnection(context: Context) {
     }
 
     suspend fun chatCompletion(target: LlmdTarget, requestJson: String): String {
+        awaitEngineReady(target)
         return requestIpc(target) { callback ->
             requireService(target).chatCompletionAsync(requestJson, callback)
+        }
+    }
+
+    private suspend fun awaitEngineReady(target: LlmdTarget) {
+        val ready = withTimeoutOrNull(REQUEST_TIMEOUT_MILLIS) {
+            while (true) {
+                val response = JSONObject(health(target))
+                response.optJSONObject("error")?.let { error ->
+                    if (error.optString("type") == "authorization_required") throw LlmdAuthorizationException()
+                    throw llmdRecognitionError(error.optString("type"), error.optString("message"))
+                }
+                // Older LLMD builds initialize synchronously and omit engineReady.
+                if (!response.has("engineReady") || response.getBoolean("engineReady")) return@withTimeoutOrNull true
+                if (response.optString("engineState") == "error") {
+                    throw llmdRecognitionError("llmd_error", response.optString("engineError"))
+                }
+                delay(500)
+            }
+        }
+        if (ready != true) {
+            throw LlmdRecognitionException("LLMD engine initialization timed out; check model status in LLMD and try again")
         }
     }
 

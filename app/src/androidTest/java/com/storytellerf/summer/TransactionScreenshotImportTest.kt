@@ -6,6 +6,7 @@ import androidx.core.net.toUri
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.lifecycle.ViewModelStore
@@ -15,6 +16,8 @@ import com.storytellerf.summer.data.DefaultDataRepository
 import com.storytellerf.summer.data.db.SummerDatabase
 import com.storytellerf.summer.data.db.entity.FundSource
 import com.storytellerf.summer.data.llmd.LlmdTarget
+import com.storytellerf.summer.data.llmd.LlmdImageAnalyzer
+import com.storytellerf.summer.data.llmd.LlmdServiceConnection
 import com.storytellerf.summer.data.recognition.*
 import com.storytellerf.summer.ui.components.formatSignedMoney
 import com.storytellerf.summer.ui.importtransactions.ImportTransactionsScreen
@@ -49,6 +52,14 @@ class TransactionScreenshotImportTest {
         val expectedCount = Json.parseToJsonElement(expectedJson).jsonObject.getValue("transactions").jsonArray.size
         val expected = if (expectedCount == 0) emptyList() else parseTransactions(expectedJson)
         val live = InstrumentationRegistry.getArguments().getString("transaction_live") == "true"
+        val llmdBuild = InstrumentationRegistry.getArguments().getString("transaction_llmd")
+        val llmdTarget = when (llmdBuild) {
+            "release" -> LlmdTarget.Release
+            "alpha" -> LlmdTarget.Alpha
+            "debug" -> LlmdTarget.Debug
+            null -> LlmdTarget.Release
+            else -> error("Unknown LLMD build")
+        }
         val keyFile = File(context.noBackupFilesDir, "transaction-test-key")
         if (live) assumeTrue("Live recognition credentials are missing", keyFile.isFile)
         val model = InstrumentationRegistry.getArguments().getString("transaction_model") ?: "test-vision"
@@ -71,7 +82,7 @@ class TransactionScreenshotImportTest {
             })
         }
         val settings = object : RecognitionSettings {
-            override val config = MutableStateFlow(RecognitionConfig(RecognitionBackend.OpenRouter,
+            override val config = MutableStateFlow(RecognitionConfig(if (llmdBuild != null) RecognitionBackend.Llmd else RecognitionBackend.OpenRouter,
                 mapOf(RecognitionBackend.OpenRouter to KoogConnection(
                     if (live) "https://openrouter.ai/api/v1" else "https://api.example.com/v1",
                     model, if (live) keyFile.readText().trim() else "test-key"))))
@@ -88,8 +99,11 @@ class TransactionScreenshotImportTest {
             val sourceId = repository.insertFundSource(FundSource(name = "Fixture Account", currency = currency))
             val account = FundSource(id = sourceId, name = "Fixture Account", currency = currency)
             val encoder = RecognitionImageEncoder(context)
-            val configured = ConfiguredImageAnalyzer(settings, object : FinanceImageAnalyzer {
-            }, { encoder.encode(it.toUri()) }, recognizer, FileRecognitionImageStore(images))
+            val imageStore = FileRecognitionImageStore(images)
+            val llmd = if (llmdBuild != null) LlmdImageAnalyzer(context, LlmdServiceConnection(context), imageStore = imageStore)
+                else object : FinanceImageAnalyzer {}
+            val configured = ConfiguredImageAnalyzer(settings, llmd,
+                { encoder.encode(it.toUri()) }, recognizer, imageStore)
             val recognitionFailure = CompletableDeferred<Throwable?>()
             val analyzer = object : FinanceImageAnalyzer {
                 override suspend fun extractTransactionsFromImage(imageReference: String, target: LlmdTarget, currency: String?) =
@@ -97,12 +111,12 @@ class TransactionScreenshotImportTest {
                         recognitionFailure.complete(result.exceptionOrNull())
                         result.exceptionOrNull()?.let { error ->
                             val connection = error as? RecognitionConnectionException
-                            android.util.Log.w("ScreenshotTest", "failure=${error.javaClass.simpleName} status=${connection?.statusCode} category=${connection?.category} origin=${error.stackTrace.firstOrNull()}")
+                            android.util.Log.w("ScreenshotTest", "failure=${error.javaClass.simpleName} status=${connection?.statusCode} category=${connection?.category} parser=${(error as? InvalidTransactionResponseException)?.failureType} origin=${error.stackTrace.firstOrNull()}")
                         }
                     }
                 override fun close() = configured.close()
             }
-            val viewModel = ImportTransactionsViewModel(repository, analyzer, flowOf(LlmdTarget.Release))
+            val viewModel = ImportTransactionsViewModel(repository, analyzer, flowOf(llmdTarget))
             store.put("import", viewModel)
             val saved = CompletableDeferred<Unit>()
             compose.setContent { ImportTransactionsScreen(onBack = { saved.complete(Unit) }, viewModel = viewModel) }
@@ -119,6 +133,11 @@ class TransactionScreenshotImportTest {
             }
             assertNull(viewModel.uiState.value.error)
             assertEquals(expected.size, viewModel.uiState.value.rows.size)
+            assertEquals("Recognized amounts must match the manually checked screenshot",
+                expected.map { it.amount }.sorted(), viewModel.uiState.value.rows.map { it.amount.toDouble() }.sorted())
+            compose.waitUntil(10_000) {
+                compose.onAllNodesWithText(formatSignedMoney(expected.first().amount, currency)).fetchSemanticsNodes().isNotEmpty()
+            }
             compose.onNodeWithText(formatSignedMoney(expected.first().amount, currency)).performScrollTo().assertIsDisplayed()
             if (expected.any { it.timestamp == null }) {
                 // Unknown screenshot dates must block persistence until the user supplies verified dates.
@@ -151,7 +170,7 @@ class TransactionScreenshotImportTest {
             assertNotNull(decoded)
             assertTrue(maxOf(decoded.width, decoded.height) <= 1600)
             decoded.recycle()
-            if (!live) assertArrayEquals(uploaded.await(), retained.readBytes())
+            if (!live && llmdBuild == null) assertArrayEquals(uploaded.await(), retained.readBytes())
             assertEquals(imageHash(retained.readBytes()), records.first().imageHash)
             compose.runOnIdle { viewModel.save() }
             compose.waitUntil(10_000) { viewModel.uiState.value.error != null }

@@ -109,6 +109,23 @@ class KoogImageRecognizerTest {
         assertEquals(0.0, parseBalances("""{"balances":[{"fundSourceId":1,"balance":0,"label":null,"currency":"EUR"}]}""", targets).single().balance, 0.0)
     }
 
+    @Test fun openRouterErrorInsideSuccessfulHttpResponseIsSanitized() = runTest {
+        val recognizer = KoogImageRecognizer { HttpClient(MockEngine {
+            respond("""{"id":"test","model":"test-vision","choices":[],"error":{"message":"Provider returned error; private response","code":429}}""",
+                headers = headersOf("Content-Type", "application/json"))
+        }) }
+        try {
+            recognizer.recognizeBalances(RecognitionBackend.OpenRouter,
+                KoogConnection("https://api.example.com/v1", "test-vision", "test-key"), byteArrayOf(1), targets)
+            fail("Expected provider rate limit")
+        } catch (error: RecognitionConnectionException) {
+            assertEquals(429, error.statusCode)
+            assertEquals("upstream_provider", error.category)
+            assertFalse(error.message!!.contains("private response"))
+            assertNull(error.cause)
+        }
+    }
+
     private fun modelResponse(backend: RecognitionBackend, responses: Boolean, content: String): String = buildJsonObject {
         put("id", "test"); put("model", "test-vision")
         when {

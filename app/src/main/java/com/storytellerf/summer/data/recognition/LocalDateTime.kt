@@ -6,7 +6,7 @@ import java.util.Locale
 import java.util.TimeZone
 
 fun parseLocalDateTime(text: String, timeZone: TimeZone = TimeZone.getDefault()): Long? {
-    if (!Regex("\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}").matches(text)) return null
+    if (!Regex("\\d{4}-\\d{1,2}-\\d{1,2}T\\d{1,2}:\\d{1,2}:\\d{1,2}").matches(text)) return null
     val parser = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.ROOT).apply {
         isLenient = false
         this.timeZone = timeZone

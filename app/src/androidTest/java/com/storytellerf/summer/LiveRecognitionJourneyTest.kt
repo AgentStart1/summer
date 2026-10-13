@@ -17,6 +17,7 @@ import com.storytellerf.summer.data.DefaultDataRepository
 import com.storytellerf.summer.data.db.SummerDatabase
 import com.storytellerf.summer.data.db.entity.FundSource
 import com.storytellerf.summer.data.llmd.DataStoreLlmdTargetSettings
+import com.storytellerf.summer.data.llmd.LlmdTarget
 import com.storytellerf.summer.data.recognition.DataStoreRecognitionSettings
 import com.storytellerf.summer.data.recognition.KoogConnection
 import com.storytellerf.summer.data.recognition.KoogImageRecognizer
@@ -37,6 +38,7 @@ import io.ktor.client.request.get
 import io.ktor.client.request.header
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import org.junit.Assert.*
@@ -45,7 +47,7 @@ import org.junit.Rule
 import org.junit.Test
 
 /** Opt-in: the runner provisions a key in app-private storage, never as an instrumentation argument. */
-class KoogOpenRouterLiveTest {
+class LiveRecognitionJourneyTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
 
     @Test fun syntheticImage_withMockTransport_isRenderedAndSavedThroughKoog() {
@@ -64,13 +66,19 @@ class KoogOpenRouterLiveTest {
         exerciseRecognition(KoogConnection("https://api.example.com/api/v1", "test-vision", "instrumentation-placeholder-key"), recognizer)
     }
 
-    @Test fun screenshotBalance_isRecognizedByKoogAndSavedFromTheForm() {
+    @Test fun screenshotBalance_isRecognizedAndSavedFromTheForm() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val credentialFile = File(context.noBackupFilesDir, "koog-live-test.json")
         assumeTrue("Provision OPENROUTER_API_KEY with scripts/test-openrouter.py to run the live test", credentialFile.isFile)
         val credentials = runBlocking(Dispatchers.IO) { JSONObject(credentialFile.readText()) }
+        val llmdTarget = when (credentials.optString("llmd")) {
+            "debug" -> LlmdTarget.Debug
+            "alpha" -> LlmdTarget.Alpha
+            "release" -> LlmdTarget.Release
+            else -> null
+        }
         try {
-            runBlocking(Dispatchers.IO) {
+            if (llmdTarget == null) runBlocking(Dispatchers.IO) {
                 val client = liveRecognitionTransport()
                 try {
                     val response = client.get("https://openrouter.ai/api/v1/key") {
@@ -81,11 +89,11 @@ class KoogOpenRouterLiveTest {
                     client.close()
                 }
             }
-            exerciseRecognition(KoogConnection("https://openrouter.ai/api/v1", credentials.getString("model"), credentials.getString("apiKey")),
+            exerciseRecognition(if (llmdTarget != null) KoogConnection() else KoogConnection("https://openrouter.ai/api/v1", credentials.getString("model"), credentials.getString("apiKey")),
                 KoogImageRecognizer(::liveRecognitionTransport),
                 inputImage = if (credentials.has("image")) File(context.noBackupFilesDir, credentials.getString("image")) else null,
                 expectedBalance = credentials.optDouble("expectedBalance", -245.70),
-                currency = credentials.optString("currency", "CNY"))
+                currency = credentials.optString("currency", "CNY"), llmdTarget = llmdTarget)
         } finally {
             credentialFile.delete()
         }
@@ -97,6 +105,7 @@ class KoogOpenRouterLiveTest {
         inputImage: File? = null,
         expectedBalance: Double = -245.70,
         currency: String = "CNY",
+        llmdTarget: LlmdTarget? = null,
     ) {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val settings = DataStoreRecognitionSettings(context)
@@ -104,24 +113,25 @@ class KoogOpenRouterLiveTest {
         val database = SummerDatabase.getInstance(context)
         val image = inputImage ?: File(context.cacheDir, "synthetic-balance.png")
         val sourceId = runBlocking(Dispatchers.IO) {
-            database.fundSourceDao().insert(FundSource(name = "Koog test wallet", currency = requireNotNull(com.storytellerf.summer.data.currencyCode(currency))))
+            database.fundSourceDao().insert(FundSource(name = "Wallet", currency = requireNotNull(com.storytellerf.summer.data.currencyCode(currency))))
         }
         try {
             runBlocking(Dispatchers.IO) {
-                settings.save(RecognitionBackend.OpenRouter, connection)
+                settings.save(if (llmdTarget == null) RecognitionBackend.OpenRouter else RecognitionBackend.Llmd, connection)
                 if (inputImage == null) createSyntheticScreenshot(image)
             }
             lateinit var viewModel: AddBalanceChangeViewModel
             compose.runOnUiThread {
                 viewModel = ViewModelProvider(compose.activity, AddBalanceChangeViewModel.Factory(
-                    DefaultDataRepository(database), configuredImageAnalyzer(context, remote = recognizer), DataStoreLlmdTargetSettings(context).selectedTarget,
+                    DefaultDataRepository(database), configuredImageAnalyzer(context, remote = recognizer),
+                    llmdTarget?.let { flowOf(it) } ?: DataStoreLlmdTargetSettings(context).selectedTarget,
                 ))[AddBalanceChangeViewModel::class.java]
                 compose.activity.setContent {
                     SummerAppTheme { AddBalanceChangeScreen(onBack = {}, viewModel = viewModel) }
                 }
             }
             compose.waitUntil(10_000) {
-                compose.onAllNodesWithText("Koog test wallet").fetchSemanticsNodes().isNotEmpty()
+                compose.onAllNodesWithText("Wallet").fetchSemanticsNodes().isNotEmpty()
             }
             val source = runBlocking(Dispatchers.IO) { database.fundSourceDao().getById(sourceId)!! }
             compose.runOnIdle {

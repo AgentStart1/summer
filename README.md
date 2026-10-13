@@ -15,7 +15,8 @@ Review the compact list and tap a transaction to edit its date, signed amount in
 and original transaction ID.
 Uncheck rows you do not want and tap **Import selected transactions**. Screenshot recognition
 uses the same provider settings as balance recognition. Use screenshots with clear income/expense direction.
-Incomplete or relative dates are left blank for you to fill before importing; ambiguous
+Order dates come from the transaction text in the screenshot, independently of the image's
+creation time. Incomplete or relative dates are left blank for you to fill before importing; ambiguous
 amounts, pending transactions and rows explicitly in a different account currency are skipped.
 
 Visible transaction/order/reference IDs are used to avoid importing the same transaction twice

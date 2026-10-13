@@ -65,8 +65,8 @@ Verified on Android 35 with Koog 1.3.0 and `qwen/qwen3.8-27b:free`:
 
 The live service occasionally returned upstream HTTP 429 errors during verification. These
 are reported without exposing response bodies or credentials; retry the opt-in test when
-capacity is available. The standard suite has seven offline emulator regression tests;
-the unprovisioned live test is skipped and run separately by the script.
+capacity is available. The standard suite runs offline device regression tests;
+unprovisioned live and external screenshot tests are skipped and run separately by the scripts.
 
 The runner builds and installs debug APKs, transfers the key through stdin into an app-private temporary file, and invokes the live instrumented test.
 The test creates a synthetic negative-balance image, calls the same ViewModel action used by
@@ -149,7 +149,9 @@ and database work run on IO; parsing and preview preparation run on worker dispa
 Both LLMD and Koog require JSON Schema for transaction arrays with local ISO dates,
 signed amounts in the selected fund-source currency, notes and nullable original transaction IDs. The parser accepts a bare
 JSON object or one enclosing JSON code fence from a model; surrounding prose and malformed
-payloads are rejected. Missing/relative dates stay null in recognition and must be completed
+payloads are rejected. Complete local dates may omit leading zeroes, but must include
+the year, month, day, hour, minute and second and pass strict calendar validation.
+Missing/relative dates stay null in recognition and must be completed
 in the preview before saving. Missing IDs stay null;
 they are never synthesized from dates or amounts. Both balance and transaction recognition save the exact compressed JPEG through
 `FileRecognitionImageStore` under `filesDir/recognition-images`. Content-addressed filenames
@@ -311,9 +313,42 @@ actual recognition against the same expectations. `--key-env` selects another se
 name; `--model` selects an eligible free vision model, verified against the current catalog.
 Keys go through stdin into a temporary app-private no-backup file and are removed in `finally`.
 
+Both runners default to free models. To explicitly test a paid model, pass
+`--model google/gemini-2.5-flash-lite --allow-paid-model` (and `--live` for transactions).
+The runner still checks image and structured-output support; it never switches to a paid
+model automatically.
+
+Both runners accept `--llmd debug` (or `release`/`alpha`) to run screenshot,
+preview and persistence assertions against the installed LLMD model over Binder IPC.
+For the transaction runner, use this instead of `--live`.
+Authorize `com.storytellerf.summer.debug` in that LLMD build before running; a missing
+model, authorization failure or recognition error fails the test.
+
+LLMD recognition holds its Binder connection while polling engine health before sending
+the image. Asynchronous model initialization may take up to 120 seconds; initialization
+errors fail immediately. Older LLMD builds without `engineReady` keep their synchronous flow.
+
 Production coroutine core/Android and coroutine test artifacts share the catalog version.
 Keep them aligned: instrumentation executes against the app APK's coroutine runtime,
 so a newer test artifact alone can cause missing-method failures before tests start.
 
 Screen effect handlers dispatch navigation, authorization launch and notifications to the
 Android main dispatcher; Host coordination continues on the injected serial worker dispatcher.
+
+## Physical-device verification (2026-10-13)
+
+With Gradle 9.8.1, AGP 9.1.1, Ktor 3.6.0 and OkHttp 5.5.0, Debug/Alpha/Release builds,
+Android Lint and 62 unit tests passed. On Android 15, 25 standard device tests passed;
+two opt-in tests were skipped and run separately. All three public screenshot integrations
+passed with mock responses, including manual correction of missing dates and retained image bytes.
+
+Real OpenRouter calls with `google/gemini-2.5-flash-lite` passed Cashew's USD balance
+(-41.54), the five Alipay relative-date transactions and the Sylq EUR-to-CNY exclusion.
+The Alipay detail assertion still failed because the model reconstructed a blurred order ID.
+LLMD Debug with the installed Gemma model initialized its GPU after the readiness fix,
+but transaction date accuracy and the synthetic/Cashew balance assertions still failed.
+These live failures remain failures; mock integration success does not establish model accuracy.
+
+Balance timestamps come from original image creation metadata (or the current-time fallback),
+with manual edits preserved. Transaction timestamps come from screenshot text and remain editable
+in the import preview. Model output is never used as the balance timestamp.

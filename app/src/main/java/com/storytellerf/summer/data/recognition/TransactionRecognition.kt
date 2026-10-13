@@ -19,25 +19,26 @@ internal fun parseTransactions(content: String, timeZone: TimeZone = TimeZone.ge
         val json = Regex("\\A```(?:json)?\\s*\\n([\\s\\S]*?)\\n```\\z", RegexOption.IGNORE_CASE)
             .matchEntire(trimmed)?.groupValues?.get(1) ?: trimmed
         val values = Json.decodeFromString<TransactionPayload>(json).transactions
-        require(values.size in 1..100)
+        require(values.size in 1..100) { "row_count" }
         values.mapNotNull { value ->
             val recognizedCurrency = value.currency?.uppercase(java.util.Locale.ROOT)
             if (currency != null && recognizedCurrency != null && recognizedCurrency != currency) {
                 return@mapNotNull null
             }
-            val timestamp = value.timestamp?.let { requireNotNull(parseLocalDateTime(it, timeZone)) }
-            require(value.amount.isFinite())
+            val timestamp = value.timestamp?.let { requireNotNull(parseLocalDateTime(it, timeZone)) { "timestamp" } }
+            require(value.amount.isFinite()) { "amount" }
             RecognizedTransaction(timestamp, value.amount, value.note?.trim()?.takeIf(String::isNotEmpty), value.transactionId?.trim()?.takeIf(String::isNotEmpty), recognizedCurrency)
-        }.also { require(it.isNotEmpty()) }
+        }.also { require(it.isNotEmpty()) { "currency" } }
     } catch (error: Exception) {
-        throw InvalidTransactionResponseException()
+        throw InvalidTransactionResponseException(error.message?.takeIf { it in setOf("row_count", "timestamp", "amount", "currency") }
+            ?: error.javaClass.simpleName)
     }
 }
 
 internal fun imageHash(jpeg: ByteArray): String = MessageDigest.getInstance("SHA-256")
     .digest(jpeg).joinToString("") { "%02x".format(it.toInt() and 0xff) }
 
-class InvalidTransactionResponseException : Exception(
+class InvalidTransactionResponseException(val failureType: String? = null) : Exception(
     "No valid transactions were recognized. Use a screenshot with readable amounts and income/expense direction."
 )
 
@@ -48,12 +49,15 @@ amount: signed numeric value; expenses/payments/支出/付款 are negative, inco
 are positive. Use visible signs or direction labels; do not guess amounts or directions.
 currency: visible ISO currency code or null when undetermined. A missing currency symbol is
 allowed. Symbols such as $ and ¥ are ambiguous; never guess their ISO currency or convert amounts.
-timestamp: full local yyyy-MM-ddTHH:mm:ss, or null for incomplete/relative/unclear dates.
+timestamp: full local yyyy-MM-ddTHH:mm:ss, with a literal T and seconds (for example
+2018-11-05T10:59:00), or JSON null for incomplete/relative/unclear dates.
 A full date without a time uses 00:00:00. 今天/昨天/TODAY/YESTERDAY, a clock time or month/day
 without a year do not establish a full date. Keep that transaction with timestamp null for review;
 never invent a year or use the current date. note: visible merchant/description, otherwise null.
 transactionId: complete visible original order/transaction/reference ID, otherwise null.
-Masked, truncated or blurred IDs are null. Never invent IDs or use a balance/date as an ID.
+Masked, truncated or blurred IDs are null. Copy an ID only when every character is
+clearly visible in one uninterrupted sequence. Never join visible fragments across a
+blurred area, reconstruct missing characters, or use a balance/date as an ID.
 Each row includes all five fields. Preserve visible order. Skip explicitly pending/failed rows
 and totals. Return {"transactions":[]} only when no readable transactions qualify.
 No markdown or explanations.

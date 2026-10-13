@@ -51,6 +51,15 @@ class TransactionRecognitionTest {
         assertEquals(-9.5, records.single().amount, 0.0)
     }
 
+    @Test fun completeDatesWithoutLeadingZeroesKeepAllComponents_andInvalidDatesStillFail() {
+        val zone = TimeZone.getTimeZone("UTC")
+        assertEquals(parseLocalDateTime("2018-11-05T10:59:00", zone), parseLocalDateTime("2018-11-5T10:59:0", zone))
+        assertEquals(parseLocalDateTime("2026-01-02T03:04:05", zone), parseLocalDateTime("2026-1-2T3:4:5", zone))
+        for (date in listOf("2026-2-30T3:4:5", "2026-1-2T25:4:5", "2026-1-2T3:4", "1-2T3:4:5", "today")) {
+            assertNull(parseLocalDateTime(date, zone))
+        }
+    }
+
     @Test fun missingDatesAndMalformedResponses_doNotCreateTransactions() {
         for (content in listOf("{\"transactions\":[]}", "```json {} ```",
             """{"transactions":[{"timestamp":"2026-02-30T12:00:00","amount":5,"note":null,"transactionId":null,"currency":null}]}""",

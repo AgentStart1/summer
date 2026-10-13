@@ -27,11 +27,17 @@ def main():
                         help='Manually checked JSON with a transactions array; [] expects recognition rejection')
     parser.add_argument('--skip-build', action='store_true', help='Use existing APKs instead of rebuilding')
     parser.add_argument('--live', action='store_true', help='Use real OpenRouter recognition instead of a mock response')
+    parser.add_argument('--llmd', choices=['release', 'alpha', 'debug'], help='Use an installed, authorized LLMD build instead of Koog')
     parser.add_argument('--key-env', default='OPENROUTER_API_KEY', help='Variable name, never the credential value')
-    parser.add_argument('--model', help='Free vision model ID, checked against the current provider catalog')
+    parser.add_argument('--model', help='Model ID, checked against the current catalog; paid models require --allow-paid-model')
+    parser.add_argument('--allow-paid-model', action='store_true', help='Allow the explicitly selected live model to incur API charges')
     parser.add_argument('--currency', default='CNY', help='ISO currency of the test account')
     parser.add_argument('--proxy-port', type=int, help='Optional device-local HTTP CONNECT proxy port')
     options = parser.parse_args()
+    if options.live and options.llmd:
+        parser.error('--live and --llmd are mutually exclusive')
+    if options.allow_paid_model and not options.live:
+        parser.error('--allow-paid-model requires --live')
     if not options.image.is_file() or not options.expected_json.is_file():
         parser.error('--image and --expected-json must be existing files')
     expected = json.loads(options.expected_json.read_text(encoding='utf-8'))
@@ -46,7 +52,7 @@ def main():
     api_key = os.environ.get(options.key_env, '').strip() if options.live else ''
     if options.live and not api_key:
         raise RuntimeError(f'The environment variable {options.key_env} is not configured')
-    model = runpy.run_path(str(PROJECT / 'scripts/test-openrouter.py'))['select_free_vision_model'](options.model) if options.live else 'test-vision'
+    model = runpy.run_path(str(PROJECT / 'scripts/test-openrouter.py'))['select_vision_model'](options.model, options.allow_paid_model) if options.live else 'test-vision'
     adb = ['adb', '-s', options.serial]
     run(adb + ['get-state'], capture_output=True)
     deadline = time.monotonic() + 60
@@ -75,12 +81,14 @@ def main():
                     'com.storytellerf.summer.TransactionScreenshotImportTest#externalScreenshotThroughEncoderPreviewAndDatabase',
                     '-e', 'transaction_live', str(options.live).lower(), '-e', 'transaction_model', model,
                     '-e', 'transaction_currency', options.currency,
+                    *(['-e', 'transaction_llmd', options.llmd] if options.llmd else []),
                     *(['-e', 'recognition_proxy_port', str(options.proxy_port)] if options.proxy_port else []),
                     APP + '.test/androidx.test.runner.AndroidJUnitRunner'], capture_output=True, text=True)
         print(result.stdout)
         if 'OK (1 test)' not in result.stdout or 'FAILURES' in result.stdout:
             raise RuntimeError('Transaction screenshot test failed')
-        print('Live screenshot recognition passed' if options.live else 'Mock API screenshot integration passed (model accuracy was not tested)')
+        print('LLMD screenshot recognition passed' if options.llmd else
+              'Live screenshot recognition passed' if options.live else 'Mock API screenshot integration passed (model accuracy was not tested)')
     finally:
         subprocess.run(adb + ['shell', 'run-as', APP, 'rm', '-f', *['no_backup/' + name for name in names]], capture_output=True)
 

@@ -5,6 +5,7 @@ import ai.koog.http.client.KoogHttpClientException
 import ai.koog.prompt.dsl.prompt
 import ai.koog.prompt.executor.clients.ConnectionTimeoutConfig
 import ai.koog.prompt.executor.clients.LLMClient
+import ai.koog.prompt.executor.clients.LLMClientException
 import ai.koog.prompt.executor.clients.anthropic.AnthropicClientSettings
 import ai.koog.prompt.executor.clients.anthropic.AnthropicLLMClient
 import ai.koog.prompt.executor.clients.openai.OpenAIClientSettings
@@ -115,7 +116,12 @@ class KoogImageRecognizer(
             // Provider exceptions may contain response bodies or credentials. Never show or log them.
             val httpError = generateSequence<Throwable>(error) { it.cause }
                 .filterIsInstance<KoogHttpClientException>().firstOrNull()
-            throw RecognitionConnectionException(httpError?.statusCode, classifyProviderFailure(httpError?.errorBody))
+            val providerError = (error as? LLMClientException)?.message
+            val status = httpError?.statusCode ?: providerError?.let {
+                Regex("\\(code: (\\d{3})\\)").find(it)?.groupValues?.get(1)?.toInt()
+            }
+            val category = classifyProviderFailure(httpError?.errorBody ?: providerError)
+            throw RecognitionConnectionException(status, category)
         } finally {
             transport.close()
         }
