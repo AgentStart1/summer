@@ -353,7 +353,12 @@ LLMD Debug with the installed Gemma model initialized its GPU after the readines
 but transaction dates and synthetic/Cashew balance JSON assertions still failed. Source inspection
 found LLMD's LiteRT-LM adapter treating incremental chunks as cumulative text: consecutive identical
 chunks lose characters (for example, 11 becomes 1), and its blank-chunk fallback can corrupt JSON.
-The separate LLMD fix has been prepared but has not been installed or verified on-device.
+The separate LLMD fix was compiled with `scripts/check-static.sh --android-kotlin`, packaged
+as an arm64 Debug APK using the existing unchanged Rust library, and installed in place.
+Three post-fix device checks returned parseable JSON: the synthetic transaction had the correct
+amount but a null date, while synthetic and Cashew balances returned empty arrays (`row_count`).
+All three ground-truth assertions remain failures. The fix preserves incremental chunks; it does
+not establish the installed model's screenshot accuracy. No dependency versions were changed.
 These live failures remain failures; mock integration success does not establish model accuracy.
 
 Balance timestamps come from original image creation metadata (or the current-time fallback),
