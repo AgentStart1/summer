@@ -165,7 +165,9 @@ class LlmdServiceConnection(context: Context) {
         pendingBinding = binding
         val intent = Intent(ACTION_BIND_IPC)
             .setComponent(ComponentName(target.packageName, LlmdTarget.SERVICE_CLASS_NAME))
-        if (appContext.bindService(intent, connection, Context.BIND_AUTO_CREATE)) {
+        // Inference is part of the foreground caller's work; ordinary bindings only grant
+        // visible-process priority, which some OEM memory managers reclaim during inference.
+        if (appContext.bindService(intent, connection, Context.BIND_AUTO_CREATE or Context.BIND_IMPORTANT)) {
             bound = true
             boundTarget = target
         } else {
