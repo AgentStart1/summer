@@ -373,6 +373,15 @@ authorized LLMD. Run instrumentation with class
 `com.storytellerf.summer.data.llmd.LlmdServiceContractTest#imageProbeUsesTheExplicitActiveModelWithoutLaunchingSummerUi`,
 `llmd_image_probe=true`, `llmd_target=debug`, and the exact `llmd_active_model` inventory ID.
 
+On the same device/model, `LlmdGuidedGenerationTest` passed all four opt-in cases twice
+(25.9 and 25.6 seconds per suite): image `text`, image `json_object`, image `json_schema`
+with the complete balance schema, and a text-only integer schema requesting value 7.
+Both guided image modes preserved the actual -245.70 balance, not merely valid JSON.
+LLMD remained foreground and its active model was asserted before and after each call.
+Enable with `llmd_format_probe=true`, `llmd_target=debug`, and `llmd_active_model`.
+These checks do not validate complex orders or other models; Summer's normal LLMD
+requests continue using JSON-only prompts with `response_format.type=text`.
+
 ### LLMD status by build
 
 `LlmdStatusHost` coordinates independent Release/Alpha/Debug snapshots and launch effects
