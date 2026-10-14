@@ -345,138 +345,49 @@ so a newer test artifact alone can cause missing-method failures before tests st
 Screen effect handlers dispatch navigation, authorization launch and notifications to the
 Android main dispatcher; Host coordination continues on the injected serial worker dispatcher.
 
-## Physical-device verification (2026-10-13)
+## LLMD integration verification
 
-### Follow-up device verification (2026-10-14)
+`LlmdStatusHost` coordinates independent build snapshots and launch effects on its serial
+dispatcher. `AndroidLlmdStatusReader` reads package metadata and health/model inventory on
+the IO worker, with a temporary connection per build. Legacy builds without explicit
+service control are not bound because their health handler can initialize an engine.
+Authorization and model state remain unknown until they can be read safely.
 
-On an Android 16 NX741J with about 14.9 GiB usable RAM and its existing 12 GiB swap,
-the current Summer/LLMD Debug APKs were installed without changing system swap,
-model weights, precision, dependencies, or language-GPU/vision-CPU configuration.
-An older Debug install had an incompatible signing certificate and a version-2 schema
-without currency; its data was backed up before replacement, then Debug test data was
-reset with the user's clarification. Production packages were not changed.
+Status refresh runs every five seconds while the section is resumed and stops when hidden.
+Cancelled reads cannot publish stale results. Authorization comes from actual Binder
+responses, not Activity result codes. Missing active-model reports never select the first
+imported model. Tests cover build isolation, cancellation/resume, routing, and rendering.
 
-The transferred E4B model matched SHA256
-`0b2a8980ce155fd97673d8e820b4d29d9c7d99b8fa6806f425d969b145bd52e0`.
-The filename-derived inventory ID was `gemma-4-E4B-it-verified`; this is the same E4B
-weights used in the earlier device tests, not a fallback or downgraded model.
+User-visible Binder connections use `BIND_AUTO_CREATE | BIND_IMPORTANT`, allowing inference
+to share the foreground caller's priority. LLMD's own foreground service controls explicit
+engine loading and shutdown. Notification permission and manufacturer background-running
+or Recent-app protection settings may be needed; no implicit model restart is added.
 
-An initial UI attempt reached image preprocessing but the vendor SPKL process manager
-terminated LLMD after Summer took foreground (`adj=50`). A foreground-only Binder image
-probe then passed twice, recognizing the synthetic balance -245.70 in 6.4 and 4.8 seconds
-with the active model unchanged. The warm-engine full Summer recognition/preview/save
-journey subsequently passed twice. These results establish basic image recognition on this
-device; they do not establish complex screenshot accuracy or cold background stability.
+Live checks covered the Off/Ready Binder contracts, repeated text generation, synthetic
+balance-image recognition, preview/persistence, and guided response formats. Earlier
+memory-pressure/OEM reclamation and complex-image accuracy failures remain distinct from
+passing assertions. Normal LLMD requests use JSON-only prompts with strict parsing;
+API providers retain native JSON Schema. Both share the extraction prompts.
 
-The opt-in foreground probe avoids launching Summer UI and requires an already Ready,
-authorized LLMD. Run instrumentation with class
-`com.storytellerf.summer.data.llmd.LlmdServiceContractTest#imageProbeUsesTheExplicitActiveModelWithoutLaunchingSummerUi`,
-`llmd_image_probe=true`, `llmd_target=debug`, and the exact `llmd_active_model` inventory ID.
+Opt-in probes require an authorized LLMD already Ready with an explicit imported model.
+Use `llmd_target=debug` and `llmd_active_model=<imported-model-id>` together with:
 
-On the same device/model, `LlmdGuidedGenerationTest` passed all four opt-in cases twice
-(25.9 and 25.6 seconds per suite): image `text`, image `json_object`, image `json_schema`
-with the complete balance schema, and a text-only integer schema requesting value 7.
-Both guided image modes preserved the actual -245.70 balance, not merely valid JSON.
-LLMD remained foreground and its active model was asserted before and after each call.
-Enable with `llmd_format_probe=true`, `llmd_target=debug`, and `llmd_active_model`.
-These checks do not validate complex orders or other models; Summer's normal LLMD
-requests continue using JSON-only prompts with `response_format.type=text`.
+- `llmd_image_probe=true` and class
+  `com.storytellerf.summer.data.llmd.LlmdServiceContractTest#imageProbeUsesTheExplicitActiveModelWithoutLaunchingSummerUi`
+  for inference without launching Summer UI.
+- `llmd_format_probe=true` and class
+  `com.storytellerf.summer.data.llmd.LlmdGuidedGenerationTest` for image text/JSON object/JSON
+  schema comparison and a text-only schema assertion.
+- `llmd_service_state=off` or `ready`, plus `llmd_model_ids=<comma-separated-imported-ids>`,
+  for the exact inventory and no-substitution contract.
+- `llmd_text_probe=true` for repeated text requests across client disconnects.
 
-### LLMD status by build
+For background regression, explicitly reload the chosen model, return to the launcher,
+leave the model service idle, then run the live recognition/preview/save journey. Verify
+the active ID and service process remain unchanged. Record notification-dialog sequencing,
+permission status, app-settings navigation, and explicit shutdown/resource release.
 
-`LlmdStatusHost` coordinates independent Release/Alpha/Debug snapshots and launch effects
-on the injected serial dispatcher. `AndroidLlmdStatusReader` checks package metadata and
-reads health/model inventory on the IO worker, using one temporary Binder connection per
-build. It never selects a model or calls generation. The explicit private model service is
-the capability marker for read-only status IPC; older builds are not bound because their
-health handler can initialize a model. Their authorization/model state remains unknown.
-
-The settings UI refreshes every five seconds while its LLMD section is resumed, stops
-on pause/disposal, and refreshes after authorization returns. Cancelled reads cannot
-publish stale results. Authorization comes from actual IPC responses, not an Activity
-result code. A missing active-model report never becomes the first imported model.
-
-68 unit tests and the standard physical suite passed (32 cases: 28 passed, four opt-in
-skips). Tests cover per-build isolation, worker selection, errors, cancellation/resume,
-effect routing, missing model reports, and rendering all three builds. The installed
-Debug reader also passed the opt-in Off-state inventory/no-load contract.
-
-Physical settings checks showed Release requiring an update, Alpha not installed, and
-Debug authorized with the actual E2B/E4B inventory. Explicit E4B startup updated Summer
-to Ready with E4B as the running model; shutdown updated it to Off with no running model.
-Legacy processes were not started by inspection. A locally signed minified Summer Alpha
-test build showed authorization required, opened the correct LLMD Debug consent screen,
-and stayed unauthorized after cancellation; that temporary test app was removed.
-
-### Earlier recognition validation
-
-With Gradle 9.8.1, AGP 9.1.1, Ktor 3.6.0 and OkHttp 5.5.0, Debug/Alpha/Release builds,
-Android Lint and 65 unit tests passed. The standard Android 15 physical-device suite passed
-25 tests, with two opt-in tests skipped and exercised separately. Mock screenshot journeys
-verify compression, preview/manual correction, persistence, retained images and deduplication;
-they do not establish model accuracy.
-
-LLMD's separate LiteRT-LM adapter incorrectly stripped repeated incremental chunks and
-replaced blank chunks with rendered content. Local LLMD commit `0885c4d` preserves the SDK
-chunks. It passed `scripts/check-static.sh --android-kotlin`; the arm64 Debug APK was packaged
-using the existing unchanged Rust library and installed in place, preserving the model.
-
-Same-image, same-prompt A/B calls isolated the subsequent empty balances/missing dates to
-LLMD's structured generation path: original and short balance prompts returned an empty array
-with JSON Schema but the correct -245.70 without guided decoding. Generic `json_object` also
-failed. Both transaction prompts without guided decoding preserved the full date, amount and ID.
-This path also changes LiteRT-LM's thinking configuration, so the experiment does not isolate
-grammar constraints from disabled thinking or establish an SDK-wide defect.
-
-LLMD now explicitly uses `response_format: {"type":"text"}` with JSON-only prompting and
-strict application parsing. Missing business fields, extra fields, quoted numeric amounts,
-invalid account assignments and explicit currency mismatches are rejected. Koog/API providers
-retain native JSON Schema. Both providers share the balance and transaction prompts.
-
-Transaction requests copy literal date evidence into `dateText`; the app formats complete
-numeric/Chinese/English-month dates. Relative or incomplete evidence stays null even if an
-invented `timestamp` is supplied. Older five-field payloads remain readable. No database schema
-or dependency versions changed. Balance prompts read numbers before account assignment and
-retain readable values when platform names or currency symbols are missing.
-
-LLMD Debug passed full preview/persistence journeys for the clear transaction (including
-2018-11-05T10:59:00 and TEST-001), the clear balance (-245.70) and Cashew USD balance (-41.54).
-Gemini 2.5 Flash Lite passed Cashew's USD balance and the five-row relative-date/manual-correction
-journey twice with the new date-evidence contract. EUR-to-CNY exclusion passed on both providers.
-
-Remaining accuracy failures: complex LLMD transaction lists still failed currency classification
-or row coverage, and both models sometimes reconstructed blurred IDs despite the prompt.
-Those strict assertions remain failures. No failed live assertion is counted as a pass, and
-successful fixtures do not guarantee arbitrary-image accuracy.
-
-The subsequent LLMD service-control build removes implicit model initialization and all
-default model IDs. Its full E4B vision model imported successfully and initialized its GPU
-language engine, but the first image request triggered Android's low-memory killer while
-preparing vision (about 3.6 GB process RSS on the 6 GB device). That E4B image test failed;
-no model/backend fallback was used. The opt-in Off-state Binder contract test passed exact
-inventory, missing/blank/unknown models, valid models while Off, and rebinding without loading.
-Run it with `llmd_service_state=off`, `llmd_target=debug`, and a comma-separated
-`llmd_model_ids` inventory. The Ready-state variant additionally requires `llmd_active_model`.
-`llmd_text_probe=true` enables two text requests with a disconnect between them; it is
-independent of image accuracy checks.
-The Ready-state contract also passed with E4B: mismatched requests failed, and client
-disconnect/rebind retained the same active model without another initialization.
-The all-GPU E4B build also failed its first text request while preparing vision. LLMD then
-kept language on GPU, fixed vision to CPU, and prepared modality executors before Ready.
-Two text calls passed with the same E4B model across a client disconnect; logs showed
-one initialization and generation durations of 5.8 and 4.5 seconds. Model weights,
-dependency versions, and context limits were unchanged.
-The actual order image still triggered low-memory termination with fixed CPU vision.
-E4B image recognition remains a failure on this device, with no extracted date/amount
-accuracy claim and no automatic switch to E2B or another provider.
-Switching LLMD off released its engine (about 3.66 GB to 172 MB process PSS), and
-the Off-state Binder contract passed again afterwards.
-LLMD's Appium import-only flow passed importing E4B, explicit selection, and service
-readiness. Its separate Binder/text assertions do not claim image generation coverage.
-The final standard physical-device report contains 29 cases: 25 passed and four opt-in
-cases skipped. The LLMD contract/text opt-ins were run separately; failed E4B image calls
-are recorded above rather than counted as standard-suite passes.
-
-Balance timestamps come from original image creation metadata (or the current-time fallback),
-with manual edits preserved. Transaction timestamps come from screenshot text and remain editable
-in the import preview. Model output is never used as the balance timestamp.
+Keep raw logs, device identifiers, hardware specifications, and device-specific memory
+measurements outside the repository. Record only general configuration, reproducible
+commands, and functional validation results here. Model files, keys, and personal
+screenshots are not committed or bundled.
