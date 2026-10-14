@@ -21,6 +21,39 @@ import org.junit.Test
 
 /** Opt-in: an authorized installed LLMD must already be in the requested state. */
 class LlmdServiceContractTest {
+    @Test fun imageProbeUsesTheExplicitActiveModelWithoutLaunchingSummerUi() = realDeviceTest {
+        val args = InstrumentationRegistry.getArguments()
+        assumeTrue("Supply llmd_image_probe=true", args.getString("llmd_image_probe") == "true")
+        val target = LlmdTarget.entries.single { it.preferenceValue == args.getString("llmd_target") }
+        val expected = requireNotNull(args.getString("llmd_active_model"))
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val file = java.io.File(context.cacheDir, "llmd-image-probe.png")
+        val bitmap = android.graphics.Bitmap.createBitmap(900, 600, android.graphics.Bitmap.Config.ARGB_8888)
+        try {
+            val canvas = android.graphics.Canvas(bitmap)
+            canvas.drawColor(android.graphics.Color.WHITE)
+            val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                color = android.graphics.Color.BLACK; textSize = 48f
+            }
+            canvas.drawText("Account balance", 60f, 160f, paint)
+            paint.textSize = 88f
+            canvas.drawText("-245.70", 60f, 300f, paint)
+            file.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+            val client = LlmdServiceConnection(context)
+            val imageDirectory = java.io.File(context.cacheDir, "llmd-image-probe-output")
+            val analyzer = LlmdImageAnalyzer(context, client,
+                imageStore = com.storytellerf.summer.data.recognition.FileRecognitionImageStore(imageDirectory))
+            try {
+                assertEquals(expected, client.activeModel(target))
+                val result = analyzer.extractBalancesFromImage(file.toURI().toString(),
+                    listOf(com.storytellerf.summer.data.recognition.BalanceReadTarget(1, "Bank", "Account balance", "CNY")), target).getOrThrow()
+                assertEquals(-245.70, result.records.single().balance, 0.001)
+                assertEquals(expected, client.activeModel(target))
+                result.imagePath?.let { java.io.File(imageDirectory, it).delete() }
+            } finally { analyzer.close() }
+        } finally { bitmap.recycle(); file.delete() }
+    }
+
     @Test fun twoTextRequestsUseTheExplicitActiveModelAcrossClientDisconnects() = realDeviceTest {
         val args = InstrumentationRegistry.getArguments()
         assumeTrue("Supply llmd_text_probe=true", args.getString("llmd_text_probe") == "true")

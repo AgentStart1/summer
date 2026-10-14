@@ -347,6 +347,32 @@ Android main dispatcher; Host coordination continues on the injected serial work
 
 ## Physical-device verification (2026-10-13)
 
+### Follow-up device verification (2026-10-14)
+
+On an Android 16 NX741J with about 14.9 GiB usable RAM and its existing 12 GiB swap,
+the current Summer/LLMD Debug APKs were installed without changing system swap,
+model weights, precision, dependencies, or language-GPU/vision-CPU configuration.
+An older Debug install had an incompatible signing certificate and a version-2 schema
+without currency; its data was backed up before replacement, then Debug test data was
+reset with the user's clarification. Production packages were not changed.
+
+The transferred E4B model matched SHA256
+`0b2a8980ce155fd97673d8e820b4d29d9c7d99b8fa6806f425d969b145bd52e0`.
+The filename-derived inventory ID was `gemma-4-E4B-it-verified`; this is the same E4B
+weights used in the earlier device tests, not a fallback or downgraded model.
+
+An initial UI attempt reached image preprocessing but the vendor SPKL process manager
+terminated LLMD after Summer took foreground (`adj=50`). A foreground-only Binder image
+probe then passed twice, recognizing the synthetic balance -245.70 in 6.4 and 4.8 seconds
+with the active model unchanged. The warm-engine full Summer recognition/preview/save
+journey subsequently passed twice. These results establish basic image recognition on this
+device; they do not establish complex screenshot accuracy or cold background stability.
+
+The opt-in foreground probe avoids launching Summer UI and requires an already Ready,
+authorized LLMD. Run instrumentation with class
+`com.storytellerf.summer.data.llmd.LlmdServiceContractTest#imageProbeUsesTheExplicitActiveModelWithoutLaunchingSummerUi`,
+`llmd_image_probe=true`, `llmd_target=debug`, and the exact `llmd_active_model` inventory ID.
+
 ### LLMD status by build
 
 `LlmdStatusHost` coordinates independent Release/Alpha/Debug snapshots and launch effects
